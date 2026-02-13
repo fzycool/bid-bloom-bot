@@ -668,27 +668,27 @@ export default function BidParser() {
             {inputMode === "file" ? (
               <div className="space-y-2">
                 <Label>上传招标文件（支持多个）</Label>
+                <input
+                  type="file"
+                  id="bid-file-upload"
+                  className="hidden"
+                  accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                  multiple
+                  onChange={(e) => {
+                    const files = e.target.files;
+                    if (files && files.length > 0) {
+                      setUploadedFiles((prev) => [...prev, ...Array.from(files)]);
+                      if (!projectName && files.length === 1) {
+                        setProjectName(files[0].name.replace(/\.(pdf|docx?|txt)$/i, ""));
+                      }
+                    }
+                    e.target.value = "";
+                  }}
+                />
                 <div
                   className="border-2 border-dashed border-border rounded-lg p-8 text-center cursor-pointer hover:border-accent/50 hover:bg-accent/5 transition-colors"
                   onClick={() => document.getElementById("bid-file-upload")?.click()}
                 >
-                  <input
-                    type="file"
-                    id="bid-file-upload"
-                    className="hidden"
-                    accept=".pdf,.doc,.docx"
-                    multiple
-                    onChange={(e) => {
-                      const files = e.target.files;
-                      if (files && files.length > 0) {
-                        setUploadedFiles((prev) => [...prev, ...Array.from(files)]);
-                        if (!projectName && files.length === 1) {
-                          setProjectName(files[0].name.replace(/\.(pdf|docx?|txt)$/i, ""));
-                        }
-                      }
-                      e.target.value = "";
-                    }}
-                  />
                   {uploadedFiles.length > 0 ? (
                     <div className="space-y-2">
                       {uploadedFiles.map((file, i) => (
