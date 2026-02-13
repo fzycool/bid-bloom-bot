@@ -105,7 +105,13 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { analysisId, content, projectName, filePath, fileType } = await req.json();
+    const { analysisId, content, projectName, filePath, fileType, customPrompt } = await req.json();
+
+    // Build system prompt with custom instructions
+    let systemPrompt = SYSTEM_PROMPT;
+    if (customPrompt) {
+      systemPrompt += `\n\n【用户自定义解析重点】\n请特别关注以下内容：\n${customPrompt}`;
+    }
 
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
@@ -117,7 +123,7 @@ serve(async (req) => {
     await supabase.from("bid_analyses").update({ ai_status: "processing" }).eq("id", analysisId);
 
     // Build messages based on input type
-    const messages: any[] = [{ role: "system", content: SYSTEM_PROMPT }];
+    const messages: any[] = [{ role: "system", content: systemPrompt }];
 
     if (filePath) {
       // Download file from storage

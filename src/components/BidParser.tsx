@@ -48,6 +48,9 @@ export default function BidParser() {
   const [analyzing, setAnalyzing] = useState(false);
   const [projectName, setProjectName] = useState("");
   const [content, setContent] = useState("");
+  const [customPrompt, setCustomPrompt] = useState(
+    "1. 评分标准表（分类、权重、评分细则、佐证材料）\n2. 废标项（★标记、否决投标条款）\n3. 陷阱项（容易忽略的失分条款）\n4. 人员配置要求（角色、数量、资质、证书）\n5. 专业技能/业务技能/职责关键词\n6. 风险评分与总体分析"
+  );
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [inputMode, setInputMode] = useState<"file" | "text">("file");
   const [selectedAnalysis, setSelectedAnalysis] = useState<BidAnalysis | null>(null);
@@ -111,6 +114,7 @@ export default function BidParser() {
       const body: any = {
         analysisId: analysis.id,
         projectName: projectName || uploadedFile?.name || "未命名项目",
+        customPrompt: customPrompt.trim() || undefined,
       };
       if (filePath) {
         body.filePath = filePath;
@@ -508,6 +512,23 @@ export default function BidParser() {
                 </p>
               </div>
             )}
+
+            {/* Custom prompt */}
+            <div className="space-y-2">
+              <Label className="flex items-center gap-2">
+                📝 自定义解析清单
+                <span className="text-xs text-muted-foreground font-normal">（告诉AI重点关注哪些内容）</span>
+              </Label>
+              <Textarea
+                placeholder="输入你希望AI重点解析的内容清单..."
+                value={customPrompt}
+                onChange={(e) => setCustomPrompt(e.target.value)}
+                className="min-h-[120px] text-sm"
+              />
+              <p className="text-xs text-muted-foreground">
+                可自由编辑，AI会按照此清单重点提取对应信息
+              </p>
+            </div>
 
             <div className="flex gap-2">
               <Button onClick={handleAnalyze} disabled={analyzing} className="gap-2">
