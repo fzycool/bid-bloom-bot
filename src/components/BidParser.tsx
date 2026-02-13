@@ -22,6 +22,7 @@ import {
   Plus,
   Upload,
   FileText,
+  GitCompare,
 } from "lucide-react";
 
 interface BidAnalysis {
@@ -30,6 +31,7 @@ interface BidAnalysis {
   scoring_table: any[];
   disqualification_items: any[];
   trap_items: any[];
+  conflict_items: any[];
   technical_keywords: string[];
   business_keywords: string[];
   responsibility_keywords: string[];
@@ -56,7 +58,7 @@ export default function BidParser() {
   const [projectName, setProjectName] = useState("");
   const [content, setContent] = useState("");
   const [customPrompt, setCustomPrompt] = useState(
-    "1. 投标截止时间，投标地点，是否讲标，投标保证金金额\n2. 评分标准表（分类、权重、评分细则、佐证材料）\n3. 废标项（★标记、否决投标条款）\n4. 陷阱项（容易忽略的失分条款）\n5. 人员配置要求（角色、数量、资质、证书）\n6. 专业技能/业务技能/职责关键词\n7. 风险评分与总体分析"
+    "1. 投标截止时间，投标地点，是否讲标，投标保证金金额\n2. 评分标准表（分类、权重、评分细则、佐证材料）\n3. 废标项（★标记、否决投标条款）\n4. 陷阱项（容易忽略的失分条款）\n5. 人员配置要求（角色、数量、资质、证书）\n6. 专业技能/业务技能/职责关键词\n7. 风险评分与总体分析\n8. 检查招标文件中明显有逻辑错误或者冲突的内容"
   );
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
   const [inputMode, setInputMode] = useState<"file" | "text">("file");
@@ -255,7 +257,7 @@ export default function BidParser() {
   // When selecting an analysis, initialize editing prompt
   useEffect(() => {
     if (selectedAnalysis) {
-      setEditingPrompt(selectedAnalysis.custom_prompt || "1. 投标截止时间，投标地点，是否讲标，投标保证金金额\n2. 评分标准表（分类、权重、评分细则、佐证材料）\n3. 废标项（★标记、否决投标条款）\n4. 陷阱项（容易忽略的失分条款）\n5. 人员配置要求（角色、数量、资质、证书）\n6. 专业技能/业务技能/职责关键词\n7. 风险评分与总体分析");
+      setEditingPrompt(selectedAnalysis.custom_prompt || "1. 投标截止时间，投标地点，是否讲标，投标保证金金额\n2. 评分标准表（分类、权重、评分细则、佐证材料）\n3. 废标项（★标记、否决投标条款）\n4. 陷阱项（容易忽略的失分条款）\n5. 人员配置要求（角色、数量、资质、证书）\n6. 专业技能/业务技能/职责关键词\n7. 风险评分与总体分析\n8. 检查招标文件中明显有逻辑错误或者冲突的内容");
     }
   }, [selectedAnalysis?.id]);
 
@@ -368,7 +370,7 @@ export default function BidParser() {
         </Card>
 
         <Tabs defaultValue="disqualification">
-          <TabsList className="grid grid-cols-5 w-full">
+          <TabsList className="grid grid-cols-6 w-full">
             <TabsTrigger value="disqualification" className="text-xs gap-1">
               <ShieldAlert className="w-3.5 h-3.5" />
               废标项
@@ -379,6 +381,13 @@ export default function BidParser() {
             <TabsTrigger value="traps" className="text-xs gap-1">
               <AlertTriangle className="w-3.5 h-3.5" />
               陷阱项
+            </TabsTrigger>
+            <TabsTrigger value="conflicts" className="text-xs gap-1">
+              <GitCompare className="w-3.5 h-3.5" />
+              逻辑冲突
+              {a.conflict_items?.length > 0 && (
+                <Badge className="ml-1 text-[10px] px-1 py-0 h-4 bg-purple-100 text-purple-800">{a.conflict_items.length}</Badge>
+              )}
             </TabsTrigger>
             <TabsTrigger value="scoring" className="text-xs gap-1">
               <BarChart3 className="w-3.5 h-3.5" />
@@ -449,6 +458,34 @@ export default function BidParser() {
               ))
             ) : (
               <p className="text-center text-muted-foreground py-8">未识别到陷阱项</p>
+            )}
+          </TabsContent>
+
+          {/* Conflict / Logic error items */}
+          <TabsContent value="conflicts" className="space-y-3 mt-4">
+            {(a.conflict_items as any[])?.length > 0 ? (
+              (a.conflict_items as any[]).map((item: any, i: number) => {
+                const sev = severityConfig[item.severity] || severityConfig.medium;
+                return (
+                  <Card key={i} className="border-l-4" style={{ borderLeftColor: item.severity === "critical" ? "#a855f7" : item.severity === "high" ? "#8b5cf6" : "#c084fc" }}>
+                    <CardContent className="p-4">
+                      <div className="flex items-center gap-2 mb-2">
+                        <GitCompare className="w-4 h-4 text-purple-500 shrink-0" />
+                        <span className="font-medium text-foreground text-sm">{item.item}</span>
+                        <span className={`text-xs px-2 py-0.5 rounded-full border ${sev.color}`}>{sev.label}</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground mb-2">{item.detail}</p>
+                      {item.location && (
+                        <div className="text-xs text-muted-foreground/70 italic">
+                          📍 位置: {item.location}
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                );
+              })
+            ) : (
+              <p className="text-center text-muted-foreground py-8">未识别到逻辑冲突项</p>
             )}
           </TabsContent>
 
