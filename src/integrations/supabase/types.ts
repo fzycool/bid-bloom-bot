@@ -19,6 +19,7 @@ export type Database = {
           ai_status: string
           audit_type: string
           created_at: string
+          file_path: string | null
           findings: Json | null
           id: string
           proposal_id: string
@@ -31,6 +32,7 @@ export type Database = {
           ai_status?: string
           audit_type?: string
           created_at?: string
+          file_path?: string | null
           findings?: Json | null
           id?: string
           proposal_id: string
@@ -43,6 +45,7 @@ export type Database = {
           ai_status?: string
           audit_type?: string
           created_at?: string
+          file_path?: string | null
           findings?: Json | null
           id?: string
           proposal_id?: string
