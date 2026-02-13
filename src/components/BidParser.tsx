@@ -40,6 +40,7 @@ interface BidAnalysis {
   created_at: string;
   custom_prompt: string | null;
   document_id: string | null;
+  file_path: string | null;
 }
 
 export default function BidParser() {
@@ -104,7 +105,7 @@ export default function BidParser() {
 
     const { data: analysis, error: insertErr } = await supabase
       .from("bid_analyses")
-      .insert({ user_id: user.id, project_name: projectName || uploadedFile?.name || "未命名项目", custom_prompt: customPrompt.trim() || null } as any)
+      .insert({ user_id: user.id, project_name: projectName || uploadedFile?.name || "未命名项目", custom_prompt: customPrompt.trim() || null, file_path: filePath || null } as any)
       .select()
       .single();
 
@@ -172,8 +173,10 @@ export default function BidParser() {
         customPrompt: newPrompt || undefined,
       };
 
-      // If there's a document_id, get the file path from documents table
-      if (selectedAnalysis.document_id) {
+      // Use stored file_path for re-analysis
+      if (selectedAnalysis.file_path) {
+        body.filePath = selectedAnalysis.file_path;
+      } else if (selectedAnalysis.document_id) {
         const { data: doc } = await supabase.from("documents").select("file_path, file_type").eq("id", selectedAnalysis.document_id).single();
         if (doc) {
           body.filePath = doc.file_path;

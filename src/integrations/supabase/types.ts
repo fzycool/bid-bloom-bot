@@ -22,6 +22,7 @@ export type Database = {
           custom_prompt: string | null
           disqualification_items: Json | null
           document_id: string | null
+          file_path: string | null
           id: string
           personnel_requirements: Json | null
           project_name: string | null
@@ -41,6 +42,7 @@ export type Database = {
           custom_prompt?: string | null
           disqualification_items?: Json | null
           document_id?: string | null
+          file_path?: string | null
           id?: string
           personnel_requirements?: Json | null
           project_name?: string | null
@@ -60,6 +62,7 @@ export type Database = {
           custom_prompt?: string | null
           disqualification_items?: Json | null
           document_id?: string | null
+          file_path?: string | null
           id?: string
           personnel_requirements?: Json | null
           project_name?: string | null
