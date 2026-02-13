@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
@@ -72,44 +73,16 @@ serve(async (req) => {
           const pdfData = await pdfResponse.json();
           resumeText = pdfData.choices?.[0]?.message?.content || "";
         } else if (isExcel) {
-          // For Excel, send as base64 to Gemini which can read spreadsheets
+          // Parse Excel with SheetJS to extract text
           const arrayBuffer = await fileData.arrayBuffer();
-          const uint8Array = new Uint8Array(arrayBuffer);
-          let binary = "";
-          for (let i = 0; i < uint8Array.length; i++) {
-            binary += String.fromCharCode(uint8Array[i]);
+          const workbook = XLSX.read(new Uint8Array(arrayBuffer), { type: "array" });
+          const texts: string[] = [];
+          for (const sheetName of workbook.SheetNames) {
+            const sheet = workbook.Sheets[sheetName];
+            const csv = XLSX.utils.sheet_to_csv(sheet, { blankrows: false });
+            if (csv.trim()) texts.push(`=== ${sheetName} ===\n${csv}`);
           }
-          const b64 = btoa(binary);
-          const mimeType = filePath.endsWith(".xlsx")
-            ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            : "application/vnd.ms-excel";
-
-          await supabase.from("resume_versions").update({ ai_status: "processing" }).eq("id", resumeVersionId);
-
-          const excelResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-            method: "POST",
-            headers: { Authorization: `Bearer ${LOVABLE_API_KEY}`, "Content-Type": "application/json" },
-            body: JSON.stringify({
-              model: "google/gemini-2.5-flash",
-              messages: [
-                {
-                  role: "system",
-                  content: "请从上传的Excel简历中提取全部文本内容，保留原始格式和结构。只输出提取的文本，不要添加额外说明。",
-                },
-                {
-                  role: "user",
-                  content: [
-                    { type: "file", file: { filename: `resume.${filePath.endsWith(".xlsx") ? "xlsx" : "xls"}`, file_data: `data:${mimeType};base64,${b64}` } },
-                    { type: "text", text: "请提取这份Excel简历的全部文本内容。" },
-                  ],
-                },
-              ],
-            }),
-          });
-
-          if (!excelResponse.ok) throw new Error(`Excel提取失败: ${excelResponse.status}`);
-          const excelData = await excelResponse.json();
-          resumeText = excelData.choices?.[0]?.message?.content || "";
+          resumeText = texts.join("\n\n");
         } else {
           // Word/txt: extract text directly
           resumeText = await fileData.text();
@@ -418,26 +391,20 @@ ${resume.content || "无"}
 
     // ---- ACTION: batch-import-excel (one Excel, multiple sheets = multiple people) ----
     if (action === "batch-import-excel") {
-      const { filePath, userId } = params;
-      if (!filePath || !userId) throw new Error("缺少参数");
+      const { sheetsText, userId } = params;
+      if (!sheetsText || !userId) throw new Error("缺少参数");
 
-      const { data: fileData, error: dlError } = await supabase.storage
-        .from("knowledge-base")
-        .download(filePath);
-      if (dlError || !fileData) throw new Error(`文件下载失败: ${dlError?.message || "unknown"}`);
-
-      const arrayBuffer = await fileData.arrayBuffer();
-      const uint8Array = new Uint8Array(arrayBuffer);
-      let binary = "";
-      for (let i = 0; i < uint8Array.length; i++) {
-        binary += String.fromCharCode(uint8Array[i]);
+      if (!Array.isArray(sheetsText) || sheetsText.length === 0) {
+        throw new Error("Excel文件中没有有效内容");
       }
-      const b64 = btoa(binary);
-      const mimeType = filePath.endsWith(".xlsx")
-        ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        : "application/vnd.ms-excel";
 
-      // Step 1: Ask Gemini to extract all sheets as structured JSON array
+      // Build prompt with all sheets' text content
+      let sheetsContent = "";
+      for (const s of sheetsText) {
+        sheetsContent += `\n=== Sheet: ${s.name} ===\n${s.text}\n`;
+      }
+
+      // Step 1: Ask AI to extract structured data from all sheets
       const extractResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
         method: "POST",
         headers: { Authorization: `Bearer ${LOVABLE_API_KEY}`, "Content-Type": "application/json" },
@@ -446,8 +413,8 @@ ${resume.content || "无"}
           messages: [
             {
               role: "system",
-              content: `你是简历解析专家。这个Excel文件包含多个Sheet，每个Sheet是一个人的简历。
-请提取每个Sheet的信息，返回JSON数组格式：
+              content: `你是简历解析专家。以下是一个Excel文件的多个Sheet内容，每个Sheet可能是一个人的简历。
+请提取每个Sheet中人员的信息，返回JSON数组格式：
 [
   {
     "sheet_name": "Sheet名称",
@@ -461,7 +428,7 @@ ${resume.content || "无"}
     "years_of_experience": 工作年限(数字或null),
     "certifications": ["证书1"],
     "skills": ["技能1"],
-    "resume_text": "该Sheet的完整简历文本内容",
+    "resume_text": "该人的完整简历文本内容",
     "work_experiences": [
       {"company": "公司", "position": "职位", "start_date": "2020-01", "end_date": "2023-06", "description": "职责描述", "is_current": false}
     ],
@@ -482,16 +449,17 @@ ${resume.content || "无"}
             },
             {
               role: "user",
-              content: [
-                { type: "file", file: { filename: `resumes.${filePath.endsWith(".xlsx") ? "xlsx" : "xls"}`, file_data: `data:${mimeType};base64,${b64}` } },
-                { type: "text", text: "请解析这个Excel中所有Sheet的简历信息。" },
-              ],
+              content: `以下是Excel文件中所有Sheet的内容：\n${sheetsContent}\n\n请解析每个Sheet中的简历信息。`,
             },
           ],
         }),
       });
 
-      if (!extractResponse.ok) throw new Error(`AI解析失败: ${extractResponse.status}`);
+      if (!extractResponse.ok) {
+        const errBody = await extractResponse.text();
+        console.error("AI batch-import error:", extractResponse.status, errBody);
+        throw new Error(`AI解析失败: ${extractResponse.status}`);
+      }
       const extractData = await extractResponse.json();
       let resultText = extractData.choices?.[0]?.message?.content || "";
       resultText = resultText.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();

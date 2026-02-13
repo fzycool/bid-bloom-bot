@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import * as XLSX from "xlsx";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -269,13 +270,23 @@ export default function ResumeFactory() {
     if (!user) return;
     setBatchImporting(true);
     try {
-      const fileExt = file.name.split('.').pop() || 'xlsx';
-      const storagePath = `${user.id}/batch-import/${Date.now()}.${fileExt}`;
-      const { error: uploadErr } = await supabase.storage.from("knowledge-base").upload(storagePath, file);
-      if (uploadErr) throw uploadErr;
+      // Parse Excel client-side using SheetJS
+      const arrayBuffer = await file.arrayBuffer();
+      const workbook = XLSX.read(arrayBuffer, { type: "array" });
+      const sheetsText: { name: string; text: string }[] = [];
+      for (const sheetName of workbook.SheetNames) {
+        const sheet = workbook.Sheets[sheetName];
+        const csv = XLSX.utils.sheet_to_csv(sheet, { blankrows: false });
+        if (csv.trim()) sheetsText.push({ name: sheetName, text: csv });
+      }
+      if (sheetsText.length === 0) {
+        toast({ title: "Excel中没有有效内容", variant: "destructive" });
+        setBatchImporting(false);
+        return;
+      }
 
       const { data, error } = await supabase.functions.invoke("resume-factory", {
-        body: { action: "batch-import-excel", filePath: storagePath, userId: user.id },
+        body: { action: "batch-import-excel", sheetsText, userId: user.id },
       });
       if (error) throw error;
 
