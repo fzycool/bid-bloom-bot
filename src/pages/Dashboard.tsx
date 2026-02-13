@@ -75,21 +75,28 @@ const Dashboard = () => {
 
       <div className="flex flex-1 overflow-hidden">
         {/* Sidebar */}
-        <nav className="w-56 border-r border-border bg-card shrink-0 p-3 space-y-1 hidden md:block">
-          {modules.map((m) => (
-            <button
-              key={m.id}
-              onClick={() => setActiveModule(m.id)}
-              className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                activeModule === m.id
-                  ? "bg-accent text-accent-foreground"
-                  : "text-muted-foreground hover:bg-secondary hover:text-foreground"
-              }`}
-            >
-              <m.icon className="w-4 h-4" />
-              {m.label}
-            </button>
-          ))}
+        <nav className="w-56 border-r border-border bg-card shrink-0 p-3 hidden md:flex md:flex-col">
+          <div className="space-y-1 flex-1">
+            {modules.map((m) => (
+              <button
+                key={m.id}
+                onClick={() => setActiveModule(m.id)}
+                className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                  activeModule === m.id
+                    ? "bg-accent text-accent-foreground"
+                    : "text-muted-foreground hover:bg-secondary hover:text-foreground"
+                }`}
+              >
+                <m.icon className="w-4 h-4" />
+                {m.label}
+              </button>
+            ))}
+          </div>
+          <div className="pt-3 border-t border-border mt-3">
+            <p className="text-[10px] text-muted-foreground/50 text-center leading-tight">
+              本平台由AI代码开发<br />润和AI中心
+            </p>
+          </div>
         </nav>
 
         {/* Mobile nav */}
