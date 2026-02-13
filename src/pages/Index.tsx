@@ -121,7 +121,7 @@ const Index = () => {
               <span className="text-gradient-accent">精准、合规、高效</span>
             </h2>
             <p className="text-primary-foreground/70 text-base leading-relaxed max-w-md">
-              从读标、写人到组卷审查，AI驱动的全流程智能协作，
+              从读标、简历到编写、审查，AI驱动的全流程智能协作，
               杜绝废标风险，提升中标概率。
             </p>
           </div>
