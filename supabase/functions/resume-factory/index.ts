@@ -413,43 +413,61 @@ ${resume.content || "无"}
           messages: [
             {
               role: "system",
-              content: `你是简历解析专家。以下是一个Excel文件的多个Sheet内容，每个Sheet可能是一个人的简历。
-请提取每个Sheet中人员的信息，返回JSON数组格式：
+              content: `你是简历解析专家。你将收到一个Excel文件中多个Sheet的CSV文本内容。
+
+**关键要求：你必须根据每个Sheet的实际格式和布局来理解数据，不要假设固定的表格结构。**
+
+Excel的格式可能包括但不限于：
+- 每行一个字段（如"姓名: 张三"）
+- 表格形式（表头+数据行）
+- 混合格式（部分为键值对，部分为表格）
+- 一个Sheet可能包含多个区域（基本信息区、工作经历区、项目经历区等）
+- 有些Sheet可能用合并单元格或空行分隔不同区域
+
+请仔细分析每个Sheet的数据结构，智能识别各字段含义，然后提取信息。
+
+对于每个有效的人员简历Sheet，返回以下JSON结构：
 [
   {
     "sheet_name": "Sheet名称",
-    "name": "姓名",
-    "gender": "性别",
-    "birth_year": 出生年份(数字或null),
-    "education": "最高学历",
+    "name": "姓名（必须提取到，否则跳过此Sheet）",
+    "gender": "性别（男/女，无法判断则null）",
+    "birth_year": 出生年份(数字或null，如1990),
+    "education": "最高学历（如博士/硕士/本科/大专）",
     "major": "专业",
-    "current_company": "当前单位",
-    "current_position": "当前职位",
-    "years_of_experience": 工作年限(数字或null),
-    "certifications": ["证书1"],
-    "skills": ["技能1"],
-    "resume_text": "该人的完整简历文本内容",
+    "current_company": "当前/最近工作单位",
+    "current_position": "当前/最近职位",
+    "years_of_experience": 工作年限(数字或null，可根据最早工作时间推算),
+    "certifications": ["证书1", "证书2"],
+    "skills": ["技能1", "技能2"],
+    "resume_text": "将该Sheet的所有信息整理为一份完整的、格式清晰的简历文本。包含：个人信息、教育背景、工作经历（含时间、公司、职位、职责）、项目经历、技能证书等。用清晰的分节和换行组织。",
     "work_experiences": [
-      {"company": "公司", "position": "职位", "start_date": "2020-01", "end_date": "2023-06", "description": "职责描述", "is_current": false}
+      {"company": "公司名", "position": "职位", "start_date": "YYYY-MM", "end_date": "YYYY-MM或至今", "description": "职责描述", "is_current": false}
     ],
     "project_experiences": [
-      {"project_name": "项目名", "role": "角色", "start_date": "2021-03", "end_date": "2022-01", "description": "项目描述", "technologies": ["技术1"]}
+      {"project_name": "项目名", "role": "担任角色", "start_date": "YYYY-MM", "end_date": "YYYY-MM", "description": "项目描述和职责", "technologies": ["技术1"]}
     ],
     "education_history": [
-      {"school": "学校", "degree": "学历", "major": "专业", "start_date": "2012-09", "end_date": "2016-06"}
+      {"school": "学校名", "degree": "学历", "major": "专业", "start_date": "YYYY-MM", "end_date": "YYYY-MM"}
     ],
     "timeline_issues": [
-      {"type": "overlap|gap|impossible", "description": "问题描述", "severity": "error|warning"}
+      {"type": "overlap|gap|impossible", "description": "具体问题描述", "severity": "error|warning"}
     ]
   }
 ]
 
-如果某个Sheet不是简历（如目录、说明页），请跳过。
-请严格输出纯JSON数组，不要包含markdown标记。`,
+**重要规则：**
+1. resume_text 必须是整理后的完整简历文本，不是原始CSV，要有清晰的格式和分节
+2. 日期格式统一为 YYYY-MM，如果只有年份则用 YYYY-01
+3. 如果某个Sheet明显不是简历（如目录、汇总表、说明页），请跳过
+4. skills 应包含从工作/项目描述中提炼的技术能力和业务能力
+5. certifications 应包含所有提到的资格证书、职称等
+6. 即使Excel格式不规范，也要尽力提取所有可用信息
+7. 请严格输出纯JSON数组，不要包含markdown标记`,
             },
             {
               role: "user",
-              content: `以下是Excel文件中所有Sheet的内容：\n${sheetsContent}\n\n请解析每个Sheet中的简历信息。`,
+              content: `以下是Excel文件中所有Sheet的内容（CSV格式）：\n${sheetsContent}\n\n请根据每个Sheet的实际格式，智能解析并提取每个人的完整简历信息。`,
             },
           ],
         }),
