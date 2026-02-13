@@ -1,0 +1,1 @@
+ALTER TABLE public.bid_analyses ADD COLUMN file_path text;
