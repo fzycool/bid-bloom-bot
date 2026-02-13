@@ -486,12 +486,22 @@ Excel的格式可能包括但不限于：
       try {
         people = JSON.parse(resultText);
       } catch {
-        console.error("Failed to parse batch result:", resultText);
-        throw new Error("AI返回格式异常，无法解析");
+        console.error("Failed to parse batch result:", resultText.slice(0, 500));
+        // Try to extract JSON array from response
+        const arrayMatch = resultText.match(/\[[\s\S]*\]/);
+        if (arrayMatch) {
+          try { people = JSON.parse(arrayMatch[0]); } catch { throw new Error("AI返回格式异常，无法解析"); }
+        } else {
+          throw new Error("AI返回格式异常，无法解析");
+        }
       }
 
-      if (!Array.isArray(people) || people.length === 0) {
-        throw new Error("未在Excel中识别到有效简历");
+      if (!Array.isArray(people)) people = [people];
+      people = people.filter((p: any) => p && p.name);
+      
+      if (people.length === 0) {
+        console.error("No valid people found. AI returned:", resultText.slice(0, 300));
+        throw new Error("未在Excel中识别到有效简历，请确认Excel中包含人员信息");
       }
 
       // Step 2: Create employees and resume versions

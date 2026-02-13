@@ -276,10 +276,33 @@ export default function ResumeFactory() {
       const sheetsText: { name: string; text: string }[] = [];
       for (const sheetName of workbook.SheetNames) {
         const sheet = workbook.Sheets[sheetName];
-        const csv = XLSX.utils.sheet_to_csv(sheet, { blankrows: false });
-        if (csv.trim()) {
-          // Truncate each sheet to max 3000 chars to avoid payload size issues
-          const trimmed = csv.length > 3000 ? csv.slice(0, 3000) : csv;
+        // Use sheet_to_json to get compact data, then stringify
+        const jsonData = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+        if (!jsonData || jsonData.length === 0) continue;
+        
+        // Remove columns that are entirely empty across all rows
+        const headers = Object.keys(jsonData[0] as object);
+        const nonEmptyHeaders = headers.filter(h => 
+          jsonData.some(row => {
+            const val = (row as any)[h];
+            return val !== "" && val !== null && val !== undefined;
+          })
+        );
+        
+        // Build compact text: header line + data lines, only non-empty columns
+        const lines: string[] = [nonEmptyHeaders.join(",")];
+        for (const row of jsonData) {
+          const vals = nonEmptyHeaders.map(h => {
+            const v = String((row as any)[h] || "").replace(/\n/g, " ").trim();
+            return v.includes(",") ? `"${v}"` : v;
+          });
+          const line = vals.join(",");
+          if (line.replace(/,/g, "").trim()) lines.push(line);
+        }
+        const compactText = lines.join("\n");
+        if (compactText.trim()) {
+          // Allow up to 6000 chars now that data is compact
+          const trimmed = compactText.length > 6000 ? compactText.slice(0, 6000) : compactText;
           sheetsText.push({ name: sheetName, text: trimmed });
         }
       }
