@@ -278,8 +278,8 @@ export default function ResumeFactory() {
         const sheet = workbook.Sheets[sheetName];
         const csv = XLSX.utils.sheet_to_csv(sheet, { blankrows: false });
         if (csv.trim()) {
-          // Truncate each sheet to max 8000 chars to avoid payload size issues
-          const trimmed = csv.length > 8000 ? csv.slice(0, 8000) : csv;
+          // Truncate each sheet to max 3000 chars to avoid payload size issues
+          const trimmed = csv.length > 3000 ? csv.slice(0, 3000) : csv;
           sheetsText.push({ name: sheetName, text: trimmed });
         }
       }
@@ -289,13 +289,12 @@ export default function ResumeFactory() {
         return;
       }
 
-      // Process in batches of 5 sheets to avoid payload size limits
-      const BATCH_SIZE = 5;
+      // Process ONE sheet at a time to avoid payload size limits
       let totalCount = 0;
-      for (let i = 0; i < sheetsText.length; i += BATCH_SIZE) {
-        const batch = sheetsText.slice(i, i + BATCH_SIZE);
+      for (let i = 0; i < sheetsText.length; i++) {
+        toast({ title: `正在导入...`, description: `第 ${i + 1}/${sheetsText.length} 个: ${sheetsText[i].name}` });
         const { data, error } = await supabase.functions.invoke("resume-factory", {
-          body: { action: "batch-import-excel", sheetsText: batch, userId: user.id },
+          body: { action: "batch-import-excel", sheetsText: [sheetsText[i]], userId: user.id },
         });
         if (error) throw error;
         totalCount += data.count || 0;
