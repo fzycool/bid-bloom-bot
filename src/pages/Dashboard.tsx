@@ -23,11 +23,11 @@ import UserManagement from "@/components/UserManagement";
 
 const baseModules = [
   { id: "overview", label: "数据看板", icon: LayoutDashboard },
-  { id: "knowledge", label: "知识库", icon: BookOpen },
   { id: "parse", label: "招标解析", icon: FileSearch },
   { id: "resume", label: "简历工厂", icon: Users },
   { id: "bid", label: "投标助手", icon: ClipboardCheck },
   { id: "audit", label: "全息审查", icon: CheckCircle },
+  { id: "knowledge", label: "知识库", icon: BookOpen },
 ];
 
 const Dashboard = () => {
