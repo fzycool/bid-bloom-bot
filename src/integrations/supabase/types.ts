@@ -70,6 +70,7 @@ export type Database = {
           bid_deadline: string | null
           bid_location: string | null
           business_keywords: Json | null
+          conflict_items: Json | null
           created_at: string
           custom_prompt: string | null
           deposit_amount: string | null
@@ -94,6 +95,7 @@ export type Database = {
           bid_deadline?: string | null
           bid_location?: string | null
           business_keywords?: Json | null
+          conflict_items?: Json | null
           created_at?: string
           custom_prompt?: string | null
           deposit_amount?: string | null
@@ -118,6 +120,7 @@ export type Database = {
           bid_deadline?: string | null
           bid_location?: string | null
           business_keywords?: Json | null
+          conflict_items?: Json | null
           created_at?: string
           custom_prompt?: string | null
           deposit_amount?: string | null
