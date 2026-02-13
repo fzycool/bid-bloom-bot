@@ -217,7 +217,7 @@ export default function DashboardOverview() {
                     </div>
                     <div className="flex items-center gap-3">
                       {a.risk_score !== null && (
-                        <span className={`text-sm font-bold ${riskColor(a.risk_score)}`}>{a.risk_score}分</span>
+                        <span className={`text-sm font-bold whitespace-nowrap ${riskColor(a.risk_score)}`}>{a.risk_score}分</span>
                       )}
                       <span className="text-xs text-muted-foreground">
                         {new Date(a.created_at).toLocaleDateString("zh-CN")}
