@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { encode as base64Encode } from "https://deno.land/std@0.168.0/encoding/base64.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -18,8 +19,9 @@ serve(async (req) => {
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    const { proposalId, auditType = "full" } = await req.json();
+    const { proposalId, filePath, fileType, auditType = "full" } = await req.json();
     if (!proposalId) throw new Error("proposalId is required");
+    if (!filePath) throw new Error("请上传终版标书文件");
 
     // Fetch proposal + bid analysis
     const { data: proposal } = await supabase
@@ -31,37 +33,29 @@ serve(async (req) => {
 
     const bid = (proposal as any).bid_analyses;
 
-    // Fetch proposal sections
-    const { data: sections } = await supabase
-      .from("proposal_sections")
-      .select("*")
-      .eq("proposal_id", proposalId)
-      .order("sort_order");
+    // Fetch proposal sections, materials, employees, resumes in parallel
+    const [
+      { data: sections },
+      { data: materials },
+      { data: employees },
+      { data: resumes },
+    ] = await Promise.all([
+      supabase.from("proposal_sections").select("*").eq("proposal_id", proposalId).order("sort_order"),
+      supabase.from("proposal_materials").select("*").eq("proposal_id", proposalId),
+      supabase.from("employees").select("*").eq("user_id", proposal.user_id),
+      supabase.from("resume_versions").select("*").eq("user_id", proposal.user_id).eq("ai_status", "completed"),
+    ]);
 
-    // Fetch proposal materials
-    const { data: materials } = await supabase
-      .from("proposal_materials")
-      .select("*")
-      .eq("proposal_id", proposalId);
-
-    // Fetch employees assigned via personnel_plan in outline
     let outlineData: any = null;
     try {
       outlineData = proposal.outline_content ? JSON.parse(proposal.outline_content) : null;
     } catch { /* ignore */ }
 
-    // Fetch employee details if personnel plan exists
-    const { data: employees } = await supabase
-      .from("employees")
-      .select("*")
-      .eq("user_id", proposal.user_id);
-
-    // Fetch resume versions for employees
-    const { data: resumes } = await supabase
-      .from("resume_versions")
-      .select("*")
-      .eq("user_id", proposal.user_id)
-      .eq("ai_status", "completed");
+    // Download the uploaded bid document
+    const { data: fileData, error: dlError } = await supabase.storage
+      .from("knowledge-base")
+      .download(filePath);
+    if (dlError || !fileData) throw new Error(`文件下载失败: ${dlError?.message || "unknown"}`);
 
     // Create audit report record
     const { data: report, error: insertErr } = await supabase
@@ -71,6 +65,7 @@ serve(async (req) => {
         user_id: proposal.user_id,
         ai_status: "processing",
         audit_type: auditType,
+        file_path: filePath,
       })
       .select("id")
       .single();
@@ -78,12 +73,18 @@ serve(async (req) => {
 
     const systemPrompt = `你是资深投标评审专家，以甲方评委的严苛视角对投标文件进行全面审查。
 
-请按以下维度进行逐项检查，输出JSON格式的审查报告：
+你将收到：
+1. 终版投标文件（完整标书）
+2. 招标文件的解析数据（评分标准、废标条件等）
+3. 投标提纲和证明材料清单
+4. 人员和简历信息
+
+请按以下维度进行逐项检查：
 
 ## 1. 响应性检查
-逐条对照招标文件要求（包括评分标准、废标条件、技术要求），检查投标文件是否有实质性应答。
-- 对每个招标要求条款，判断投标文件中是否有对应的应答
-- 标注漏项风险
+逐条对照招标文件的评分标准和废标条件，检查终版标书中是否有实质性应答。
+- 不仅检查星号项，还要检查每一个评分细则
+- 标注漏项风险和应答不充分的章节
 
 ## 2. 逻辑一致性校验
 - 人员逻辑：方案中提到的人数与实际人员清单/简历数量是否一致
@@ -95,6 +96,7 @@ serve(async (req) => {
 - 检查各章节之间的过渡是否自然
 - 检测是否存在"硬拼接"（前后章节主题突然跳变、行业术语不一致）
 - 检查是否存在上下文语义漂移（如前文讲智慧校园后文却提智慧医疗）
+- 检查是否有明显的复制粘贴痕迹（如项目名称不一致）
 
 请严格输出纯JSON：
 {
@@ -104,7 +106,7 @@ serve(async (req) => {
       "severity": "error|warning|info",
       "title": "问题标题（简洁）",
       "description": "问题描述",
-      "location": "问题所在章节或位置",
+      "location": "问题所在章节或页码",
       "suggestion": "修改建议"
     }
   ],
@@ -118,7 +120,8 @@ serve(async (req) => {
 - 50-69：合格，存在若干需要修复的问题
 - 0-49：不合格，存在严重问题需立即修复`;
 
-    const userContent = `【招标项目】${bid?.project_name || proposal.project_name || "未命名"}
+    // Build context text for supplementary data
+    const contextText = `【招标项目】${bid?.project_name || proposal.project_name || "未命名"}
 
 【招标文件评分标准】
 ${JSON.stringify(bid?.scoring_table || [])}
@@ -131,10 +134,9 @@ ${JSON.stringify(bid?.personnel_requirements || [])}
 
 【技术关键词】${JSON.stringify(bid?.technical_keywords || [])}
 【业务关键词】${JSON.stringify(bid?.business_keywords || [])}
-【职责关键词】${JSON.stringify(bid?.responsibility_keywords || [])}
 
-【投标文件提纲与内容】
-${(sections || []).map((s: any) => `${s.section_number || ""} ${s.title}: ${s.content || "（空）"}`).join("\n")}
+【投标提纲】
+${(sections || []).map((s: any) => `${s.section_number || ""} ${s.title}`).join("\n")}
 
 【证明材料清单】
 ${(materials || []).map((m: any) => `- ${m.material_name || "未知"} [${m.requirement_type}/${m.status}] ${m.requirement_text}`).join("\n")}
@@ -143,23 +145,52 @@ ${(materials || []).map((m: any) => `- ${m.material_name || "未知"} [${m.requi
 ${outlineData?.personnel_plan ? JSON.stringify(outlineData.personnel_plan) : "无"}
 
 【实际可用人员】
-${(employees || []).map((e: any) => `- ${e.name}: ${e.current_position || "未知"}, 技能: ${(e.skills || []).join(",")}, 证书: ${(e.certifications || []).join(",")}`).join("\n")}
+${(employees || []).map((e: any) => `- ${e.name}: ${e.current_position || "未知"}, 证书: ${(e.certifications || []).join(",")}`).join("\n")}
 
-【已有简历版本】
-${(resumes || []).map((r: any) => `- 员工ID:${r.employee_id}, 版本:${r.version_name}, 目标岗位:${r.target_role || "未知"}`).join("\n")}
+【已有简历】
+${(resumes || []).map((r: any) => `- 员工ID:${r.employee_id}, 版本:${r.version_name}, 岗位:${r.target_role || "未知"}`).join("\n")}
 
-【招标文件摘要】
-${bid?.summary || "无"}`;
+【招标摘要】${bid?.summary || "无"}`;
+
+    // Build messages - send PDF as multimodal, others as text
+    const messages: any[] = [{ role: "system", content: systemPrompt }];
+    const isPdf = filePath.endsWith(".pdf") || fileType?.includes("pdf");
+
+    if (isPdf) {
+      const arrayBuffer = await fileData.arrayBuffer();
+      const uint8Array = new Uint8Array(arrayBuffer);
+      const b64 = base64Encode(uint8Array);
+
+      messages.push({
+        role: "user",
+        content: [
+          {
+            type: "file",
+            file: {
+              filename: filePath.split("/").pop() || "bid-document.pdf",
+              file_data: `data:application/pdf;base64,${b64}`,
+            },
+          },
+          {
+            type: "text",
+            text: `以上是终版投标文件，请结合以下招标要求和辅助数据进行全面审查：\n\n${contextText}`,
+          },
+        ],
+      });
+    } else {
+      const textContent = await fileData.text();
+      messages.push({
+        role: "user",
+        content: `以下是终版投标文件内容：\n\n${textContent}\n\n---\n\n请结合以下招标要求和辅助数据进行全面审查：\n\n${contextText}`,
+      });
+    }
 
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
       headers: { Authorization: `Bearer ${LOVABLE_API_KEY}`, "Content-Type": "application/json" },
       body: JSON.stringify({
         model: "google/gemini-2.5-flash",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userContent },
-        ],
+        messages,
       }),
     });
 
@@ -184,7 +215,6 @@ ${bid?.summary || "无"}`;
       throw new Error("AI返回格式异常");
     }
 
-    // Save audit results
     await supabase.from("audit_reports").update({
       findings: result.findings || [],
       summary: result.summary || "",

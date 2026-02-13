@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 import {
   CheckCircle, AlertTriangle, XCircle, Loader2,
   Shield, Eye, GitBranch, BookOpen, Trash2, Sparkles, Info,
+  Upload, FileText,
 } from "lucide-react";
 
 interface Proposal {
@@ -37,6 +38,7 @@ interface AuditReport {
   findings: Finding[];
   summary: string | null;
   score: number | null;
+  file_path: string | null;
   created_at: string;
 }
 
@@ -55,6 +57,7 @@ const severityConfig = {
 export default function HolographicAudit() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [selectedProposalId, setSelectedProposalId] = useState("");
@@ -62,6 +65,8 @@ export default function HolographicAudit() {
   const [selectedReport, setSelectedReport] = useState<AuditReport | null>(null);
   const [running, setRunning] = useState(false);
   const [filter, setFilter] = useState<string>("all");
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
 
   const fetchProposals = useCallback(async () => {
     if (!user) return;
@@ -89,17 +94,55 @@ export default function HolographicAudit() {
     fetchReports();
   }, [fetchProposals, fetchReports]);
 
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const allowed = [
+      "application/pdf",
+      "application/msword",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ];
+    if (!allowed.includes(file.type)) {
+      toast({ title: "仅支持 PDF、DOC、DOCX 格式", variant: "destructive" });
+      return;
+    }
+    if (file.size > 20 * 1024 * 1024) {
+      toast({ title: "文件大小不能超过20MB", variant: "destructive" });
+      return;
+    }
+    setSelectedFile(file);
+  };
+
   const handleRun = async () => {
-    if (!selectedProposalId) return;
+    if (!selectedProposalId || !selectedFile) return;
     setRunning(true);
+    setUploading(true);
     try {
+      // Upload file to storage
+      const timestamp = Date.now();
+      const safeName = `${timestamp}_${selectedFile.name.replace(/[^a-zA-Z0-9._\u4e00-\u9fff-]/g, "_")}`;
+      const storagePath = `${user!.id}/audit/${safeName}`;
+
+      const { error: uploadErr } = await supabase.storage
+        .from("knowledge-base")
+        .upload(storagePath, selectedFile);
+      if (uploadErr) throw new Error(`文件上传失败: ${uploadErr.message}`);
+
+      setUploading(false);
+
+      // Call audit function with file path
       const { data, error } = await supabase.functions.invoke("holographic-audit", {
-        body: { proposalId: selectedProposalId },
+        body: {
+          proposalId: selectedProposalId,
+          filePath: storagePath,
+          fileType: selectedFile.type,
+        },
       });
       if (error) throw error;
       toast({ title: "全息审查完成" });
+      setSelectedFile(null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
       await fetchReports();
-      // Auto-select new report
       if (data?.reportId) {
         const { data: fresh } = await supabase
           .from("audit_reports")
@@ -112,6 +155,7 @@ export default function HolographicAudit() {
       toast({ title: "审查失败", description: e.message, variant: "destructive" });
     } finally {
       setRunning(false);
+      setUploading(false);
     }
   };
 
@@ -141,17 +185,20 @@ export default function HolographicAudit() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-bold text-foreground">全息检查与逻辑自证</h2>
-          <p className="text-sm text-muted-foreground mt-1">模拟评委视角，逐条响应性检查、逻辑一致性校验、语义连贯性审查</p>
+          <p className="text-sm text-muted-foreground mt-1">上传终版标书，模拟评委视角进行逐条审查</p>
         </div>
       </div>
 
       {/* Run audit */}
       <Card>
-        <CardContent className="pt-4">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm">发起审查</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
           <div className="flex flex-col sm:flex-row gap-3">
             <Select value={selectedProposalId} onValueChange={setSelectedProposalId}>
               <SelectTrigger className="flex-1">
-                <SelectValue placeholder="选择已完成的投标方案" />
+                <SelectValue placeholder="选择关联的投标方案" />
               </SelectTrigger>
               <SelectContent>
                 {proposals.map((p) => (
@@ -159,14 +206,48 @@ export default function HolographicAudit() {
                 ))}
               </SelectContent>
             </Select>
-            <Button onClick={handleRun} disabled={!selectedProposalId || running}>
-              {running ? (
-                <><Loader2 className="w-4 h-4 mr-1 animate-spin" />审查中...</>
-              ) : (
-                <><Sparkles className="w-4 h-4 mr-1" />开始全息审查</>
-              )}
-            </Button>
           </div>
+
+          {/* File upload */}
+          <div
+            className="border-2 border-dashed border-border rounded-lg p-4 text-center cursor-pointer hover:border-accent transition-colors"
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".pdf,.doc,.docx"
+              className="hidden"
+              onChange={handleFileChange}
+            />
+            {selectedFile ? (
+              <div className="flex items-center justify-center gap-2">
+                <FileText className="w-5 h-5 text-accent" />
+                <span className="text-sm font-medium text-foreground">{selectedFile.name}</span>
+                <span className="text-xs text-muted-foreground">
+                  ({(selectedFile.size / 1024 / 1024).toFixed(1)}MB)
+                </span>
+              </div>
+            ) : (
+              <div>
+                <Upload className="w-8 h-8 mx-auto mb-2 text-muted-foreground" />
+                <p className="text-sm text-muted-foreground">点击上传终版投标文件</p>
+                <p className="text-xs text-muted-foreground mt-1">支持 PDF、DOC、DOCX，最大 20MB</p>
+              </div>
+            )}
+          </div>
+
+          <Button
+            onClick={handleRun}
+            disabled={!selectedProposalId || !selectedFile || running}
+            className="w-full sm:w-auto"
+          >
+            {running ? (
+              <><Loader2 className="w-4 h-4 mr-1 animate-spin" />{uploading ? "上传中..." : "审查中..."}</>
+            ) : (
+              <><Sparkles className="w-4 h-4 mr-1" />开始全息审查</>
+            )}
+          </Button>
         </CardContent>
       </Card>
 
@@ -231,7 +312,7 @@ export default function HolographicAudit() {
             <Card className="flex items-center justify-center py-20">
               <div className="text-center text-muted-foreground">
                 <Shield className="w-10 h-10 mx-auto mb-3 opacity-40" />
-                <p className="text-sm">选择投标方案开始全息审查</p>
+                <p className="text-sm">上传终版标书开始全息审查</p>
               </div>
             </Card>
           ) : selectedReport.ai_status === "processing" ? (
