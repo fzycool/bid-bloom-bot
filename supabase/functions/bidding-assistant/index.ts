@@ -126,7 +126,7 @@ ${(employees || []).map((e: any) => `- ${e.name}: ${e.current_position || "æœªçŸ
         method: "POST",
         headers: { Authorization: `Bearer ${LOVABLE_API_KEY}`, "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: "google/gemini-2.5-flash",
+          model: "openai/gpt-5.2",
           messages: [
             { role: "system", content: systemContent },
             { role: "user", content: userContent },

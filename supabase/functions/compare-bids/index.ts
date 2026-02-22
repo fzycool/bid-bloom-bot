@@ -240,7 +240,7 @@ serve(async (req) => {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
+        model: "openai/gpt-5.2",
         messages,
         tools: COMPARISON_TOOLS,
         tool_choice: { type: "function", function: { name: "compare_bid_documents" } },
