@@ -25,6 +25,22 @@ import {
   GitCompare,
 } from "lucide-react";
 
+interface StructureSection {
+  number?: string;
+  title: string;
+  page_hint?: string;
+  importance: "critical" | "high" | "medium" | "low";
+  importance_reason?: string;
+  children?: StructureSection[];
+}
+
+interface DocumentStructure {
+  document_title: string;
+  total_pages?: number;
+  sections: StructureSection[];
+  summary: string;
+}
+
 interface BidAnalysis {
   id: string;
   project_name: string | null;
@@ -47,6 +63,7 @@ interface BidAnalysis {
   bid_location: string | null;
   requires_presentation: boolean | null;
   deposit_amount: string | null;
+  document_structure: any;
 }
 
 export default function BidParser() {
@@ -66,6 +83,7 @@ export default function BidParser() {
   const [showForm, setShowForm] = useState(false);
   const [editingPrompt, setEditingPrompt] = useState("");
   const [reAnalyzing, setReAnalyzing] = useState(false);
+  const [detailParsing, setDetailParsing] = useState(false);
 
   const fetchAnalyses = useCallback(async () => {
     if (!user) return;
@@ -73,7 +91,7 @@ export default function BidParser() {
       .from("bid_analyses")
       .select("*")
       .order("created_at", { ascending: false });
-    setAnalyses((data as BidAnalysis[]) || []);
+    setAnalyses((data as unknown as BidAnalysis[]) || []);
     setLoading(false);
   }, [user]);
 
@@ -93,7 +111,6 @@ export default function BidParser() {
     setAnalyzing(true);
 
     if (inputMode === "file") {
-      // Process multiple files
       let lastAnalysis: any = null;
       for (const file of uploadedFiles) {
         const fileExt = file.name.split('.').pop() || 'bin';
@@ -120,23 +137,23 @@ export default function BidParser() {
         }
 
         try {
-          const { error: fnErr } = await supabase.functions.invoke("parse-bid", {
+          // Step 1: Analyze structure first
+          const { error: structErr } = await supabase.functions.invoke("parse-bid-structure", {
             body: {
               analysisId: analysis.id,
               projectName: name,
-              customPrompt: customPrompt.trim() || undefined,
               filePath: storagePath,
               fileType: file.type || "",
             },
           });
-          if (fnErr) throw fnErr;
+          if (structErr) throw structErr;
           lastAnalysis = analysis;
         } catch (err: any) {
-          toast({ title: `${file.name} 解析失败`, description: err.message, variant: "destructive" });
+          toast({ title: `${file.name} 结构分析失败`, description: err.message, variant: "destructive" });
         }
       }
 
-      toast({ title: "批量解析完成", description: `已处理 ${uploadedFiles.length} 个文件` });
+      toast({ title: "结构分析完成", description: `已分析 ${uploadedFiles.length} 个文件的整体结构，请查看后进行详细解析` });
       setUploadedFiles([]);
       setProjectName("");
       setShowForm(false);
@@ -148,10 +165,10 @@ export default function BidParser() {
           .select("*")
           .eq("id", lastAnalysis.id)
           .single();
-        if (updated) setSelectedAnalysis(updated as BidAnalysis);
+        if (updated) setSelectedAnalysis(updated as unknown as BidAnalysis);
       }
     } else {
-      // Text mode - single analysis
+      // Text mode
       const { data: analysis, error: insertErr } = await supabase
         .from("bid_analyses")
         .insert({ user_id: user.id, project_name: projectName || "未命名项目", custom_prompt: customPrompt.trim() || null } as any)
@@ -165,17 +182,17 @@ export default function BidParser() {
       }
 
       try {
-        const { error: fnErr } = await supabase.functions.invoke("parse-bid", {
+        // Step 1: Analyze structure first
+        const { error: structErr } = await supabase.functions.invoke("parse-bid-structure", {
           body: {
             analysisId: analysis.id,
             projectName: projectName || "未命名项目",
-            customPrompt: customPrompt.trim() || undefined,
             content: content.substring(0, 30000),
           },
         });
-        if (fnErr) throw fnErr;
+        if (structErr) throw structErr;
 
-        toast({ title: "解析完成", description: "招标文件已完成智能解析" });
+        toast({ title: "结构分析完成", description: "请查看文档结构后进行详细解析" });
         setContent("");
         setProjectName("");
         setShowForm(false);
@@ -186,12 +203,51 @@ export default function BidParser() {
           .select("*")
           .eq("id", analysis.id)
           .single();
-        if (updated) setSelectedAnalysis(updated as BidAnalysis);
+        if (updated) setSelectedAnalysis(updated as unknown as BidAnalysis);
       } catch (err: any) {
-        toast({ title: "解析失败", description: err.message, variant: "destructive" });
+        toast({ title: "结构分析失败", description: err.message, variant: "destructive" });
       }
     }
     setAnalyzing(false);
+  };
+
+  // Step 2: Detailed parsing based on structure
+  const handleDetailParse = async () => {
+    if (!selectedAnalysis || !user) return;
+    setDetailParsing(true);
+
+    try {
+      const body: any = {
+        analysisId: selectedAnalysis.id,
+        projectName: selectedAnalysis.project_name || "未命名项目",
+        customPrompt: editingPrompt.trim() || undefined,
+        documentStructure: selectedAnalysis.document_structure || undefined,
+      };
+
+      if (selectedAnalysis.file_path) {
+        body.filePath = selectedAnalysis.file_path;
+      } else if (selectedAnalysis.document_id) {
+        const { data: doc } = await supabase.from("documents").select("file_path, file_type").eq("id", selectedAnalysis.document_id).single();
+        if (doc) {
+          body.filePath = doc.file_path;
+          body.fileType = doc.file_type || "";
+        }
+      }
+
+      await supabase.from("bid_analyses").update({ ai_status: "processing" } as any).eq("id", selectedAnalysis.id);
+
+      const { error: fnErr } = await supabase.functions.invoke("parse-bid", { body });
+      if (fnErr) throw fnErr;
+
+      toast({ title: "详细解析完成" });
+      await fetchAnalyses();
+      const { data: updated } = await supabase.from("bid_analyses").select("*").eq("id", selectedAnalysis.id).single();
+      if (updated) setSelectedAnalysis(updated as unknown as BidAnalysis);
+    } catch (err: any) {
+      toast({ title: "详细解析失败", description: err.message, variant: "destructive" });
+      await supabase.from("bid_analyses").update({ ai_status: "failed" } as any).eq("id", selectedAnalysis.id);
+    }
+    setDetailParsing(false);
   };
 
   const handleDelete = async (id: string) => {
@@ -206,18 +262,15 @@ export default function BidParser() {
     setReAnalyzing(true);
     const newPrompt = editingPrompt.trim() || null;
 
-    // Update stored prompt
-    await supabase.from("bid_analyses").update({ ai_status: "processing", custom_prompt: newPrompt } as any).eq("id", selectedAnalysis.id);
-    setSelectedAnalysis((prev) => prev ? { ...prev, ai_status: "processing", custom_prompt: newPrompt } : prev);
+    await supabase.from("bid_analyses").update({ ai_status: "analyzing_structure", custom_prompt: newPrompt } as any).eq("id", selectedAnalysis.id);
+    setSelectedAnalysis((prev) => prev ? { ...prev, ai_status: "analyzing_structure", custom_prompt: newPrompt } : prev);
 
     try {
       const body: any = {
         analysisId: selectedAnalysis.id,
         projectName: selectedAnalysis.project_name || "未命名项目",
-        customPrompt: newPrompt || undefined,
       };
 
-      // Use stored file_path for re-analysis
       if (selectedAnalysis.file_path) {
         body.filePath = selectedAnalysis.file_path;
       } else if (selectedAnalysis.document_id) {
@@ -228,13 +281,14 @@ export default function BidParser() {
         }
       }
 
-      const { error: fnErr } = await supabase.functions.invoke("parse-bid", { body });
-      if (fnErr) throw fnErr;
+      // Step 1: Re-analyze structure
+      const { error: structErr } = await supabase.functions.invoke("parse-bid-structure", { body });
+      if (structErr) throw structErr;
 
-      toast({ title: "重新解析完成" });
+      toast({ title: "结构重新分析完成", description: "请查看后进行详细解析" });
       await fetchAnalyses();
       const { data: updated } = await supabase.from("bid_analyses").select("*").eq("id", selectedAnalysis.id).single();
-      if (updated) setSelectedAnalysis(updated as BidAnalysis);
+      if (updated) setSelectedAnalysis(updated as unknown as BidAnalysis);
     } catch (err: any) {
       toast({ title: "解析失败", description: err.message, variant: "destructive" });
       await supabase.from("bid_analyses").update({ ai_status: "failed" } as any).eq("id", selectedAnalysis.id);
@@ -261,8 +315,41 @@ export default function BidParser() {
     }
   }, [selectedAnalysis?.id]);
 
+  const importanceConfig: Record<string, { color: string; label: string }> = {
+    critical: { color: "bg-red-100 text-red-800 border-red-200", label: "关键" },
+    high: { color: "bg-orange-100 text-orange-800 border-orange-200", label: "重要" },
+    medium: { color: "bg-yellow-100 text-yellow-800 border-yellow-200", label: "一般" },
+    low: { color: "bg-muted text-muted-foreground border-border", label: "参考" },
+  };
+
+  const renderStructureSection = (section: StructureSection, depth: number = 0) => {
+    const imp = importanceConfig[section.importance] || importanceConfig.medium;
+    return (
+      <div key={`${section.number}-${section.title}`} className={`${depth > 0 ? "ml-6 border-l-2 border-border pl-4" : ""}`}>
+        <div className="flex items-center gap-2 py-2">
+          <span className={`text-xs px-2 py-0.5 rounded-full border ${imp.color}`}>{imp.label}</span>
+          {section.number && <span className="text-sm font-mono text-muted-foreground">{section.number}</span>}
+          <span className={`text-sm ${section.importance === "critical" ? "font-bold text-foreground" : section.importance === "high" ? "font-semibold text-foreground" : "text-foreground"}`}>
+            {section.title}
+          </span>
+          {section.page_hint && <span className="text-xs text-muted-foreground">({section.page_hint})</span>}
+        </div>
+        {section.importance_reason && (
+          <p className="text-xs text-muted-foreground ml-[72px] -mt-1 mb-1">{section.importance_reason}</p>
+        )}
+        {section.children?.map((child) => renderStructureSection(child, depth + 1))}
+      </div>
+    );
+  };
+
   if (selectedAnalysis) {
     const a = selectedAnalysis;
+    const structure = a.document_structure as DocumentStructure | null;
+    const isStructureReady = a.ai_status === "structure_ready";
+    const isCompleted = a.ai_status === "completed";
+    const isAnalyzingStructure = a.ai_status === "analyzing_structure";
+    const isProcessing = a.ai_status === "processing";
+
     return (
       <div className="space-y-6">
         <div className="flex items-center justify-between">
@@ -277,20 +364,22 @@ export default function BidParser() {
             <p className="text-sm text-muted-foreground">
               解析于 {new Date(a.created_at).toLocaleString("zh-CN")}
             </p>
-            <div className="flex items-center gap-3 mt-2 flex-wrap">
-              {a.bid_deadline && (
-                <span className="inline-flex items-center gap-1 px-3 py-1 rounded-lg bg-red-100 text-red-700 font-bold text-sm">
-                  📅 投标截止: {new Date(a.bid_deadline).toLocaleString("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}
-                </span>
-              )}
-              {a.bid_location && (
-                <span className="inline-flex items-center gap-1 px-3 py-1 rounded-lg bg-blue-100 text-blue-700 font-bold text-sm">
-                  📍 {a.bid_location}
-                </span>
-              )}
-            </div>
+            {isCompleted && (
+              <div className="flex items-center gap-3 mt-2 flex-wrap">
+                {a.bid_deadline && (
+                  <span className="inline-flex items-center gap-1 px-3 py-1 rounded-lg bg-red-100 text-red-700 font-bold text-sm">
+                    📅 投标截止: {new Date(a.bid_deadline).toLocaleString("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                  </span>
+                )}
+                {a.bid_location && (
+                  <span className="inline-flex items-center gap-1 px-3 py-1 rounded-lg bg-blue-100 text-blue-700 font-bold text-sm">
+                    📍 {a.bid_location}
+                  </span>
+                )}
+              </div>
+            )}
           </div>
-          {a.risk_score !== null && (
+          {isCompleted && a.risk_score !== null && (
             <div className="text-center">
               <div className={`text-3xl font-bold ${riskColor(a.risk_score)}`}>{a.risk_score}</div>
               <div className="text-xs text-muted-foreground">风险评分</div>
@@ -298,313 +387,409 @@ export default function BidParser() {
           )}
         </div>
 
-        {a.summary && (
-          <Card>
-            <CardContent className="p-4">
-              <p className="text-sm text-foreground leading-relaxed">{a.summary}</p>
+        {/* Status indicators */}
+        {isAnalyzingStructure && (
+          <Card className="border-accent/30">
+            <CardContent className="flex items-center gap-3 p-6">
+              <Loader2 className="w-6 h-6 animate-spin text-accent" />
+              <div>
+                <p className="font-medium text-foreground">正在分析文档整体结构...</p>
+                <p className="text-sm text-muted-foreground">AI正在识别文档章节和目录结构</p>
+              </div>
             </CardContent>
           </Card>
         )}
 
-        {/* Basic info card - always show */}
-        <Card className="border-2 border-accent/30">
-            <CardContent className="p-5">
-              <h3 className="text-sm font-bold text-foreground mb-3 flex items-center gap-2">📋 招标基本信息</h3>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="space-y-1">
-                  <div className="text-xs text-muted-foreground">投标截止时间</div>
-                  <div className={`text-sm font-bold ${a.bid_deadline ? "text-red-600" : "text-muted-foreground"}`}>
-                    {a.bid_deadline
-                      ? new Date(a.bid_deadline).toLocaleString("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })
-                      : "未识别"}
-                  </div>
-                </div>
-                <div className="space-y-1">
-                  <div className="text-xs text-muted-foreground">投标地点</div>
-                  <div className={`text-sm font-bold ${a.bid_location ? "text-blue-600" : "text-muted-foreground"}`}>
-                    {a.bid_location || "未识别"}
-                  </div>
-                </div>
-                <div className="space-y-1">
-                  <div className="text-xs text-muted-foreground">是否讲标</div>
-                  <div className={`text-sm font-bold ${a.requires_presentation === true ? "text-orange-600" : a.requires_presentation === false ? "text-green-600" : "text-muted-foreground"}`}>
-                    {a.requires_presentation === true ? "✅ 需要讲标" : a.requires_presentation === false ? "❌ 无需讲标" : "未识别"}
-                  </div>
-                </div>
-                <div className="space-y-1">
-                  <div className="text-xs text-muted-foreground">投标保证金</div>
-                  <div className={`text-sm font-bold ${a.deposit_amount ? "text-amber-600" : "text-muted-foreground"}`}>
-                    {a.deposit_amount || "未识别"}
-                  </div>
-                </div>
+        {isProcessing && (
+          <Card className="border-accent/30">
+            <CardContent className="flex items-center gap-3 p-6">
+              <Loader2 className="w-6 h-6 animate-spin text-accent" />
+              <div>
+                <p className="font-medium text-foreground">正在进行详细解析...</p>
+                <p className="text-sm text-muted-foreground">AI正在根据文档结构逐章节详细解读</p>
               </div>
             </CardContent>
           </Card>
+        )}
 
-
-
-        <Card>
-          <CardHeader className="pb-2 pt-4 px-4">
-            <CardTitle className="text-sm font-semibold flex items-center gap-2">
-              📝 解析提示词
-              <span className="text-xs text-muted-foreground font-normal">（修改后可重新解析）</span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="px-4 pb-4 space-y-3">
-            <Textarea
-              value={editingPrompt}
-              onChange={(e) => setEditingPrompt(e.target.value)}
-              className="min-h-[100px] text-sm"
-              disabled={reAnalyzing}
-            />
-            <Button
-              onClick={handleReAnalyze}
-              disabled={reAnalyzing}
-              size="sm"
-              className="gap-2"
-            >
-              {reAnalyzing ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileSearch className="w-4 h-4" />}
-              {reAnalyzing ? "重新解析中..." : "重新解析"}
-            </Button>
-          </CardContent>
-        </Card>
-
-        <Tabs defaultValue="disqualification">
-          <TabsList className="grid grid-cols-6 w-full">
-            <TabsTrigger value="disqualification" className="text-xs gap-1">
-              <ShieldAlert className="w-3.5 h-3.5" />
-              废标项
-              {a.disqualification_items?.length > 0 && (
-                <Badge variant="destructive" className="ml-1 text-[10px] px-1 py-0 h-4">{a.disqualification_items.length}</Badge>
+        {/* Step 1: Document Structure Display */}
+        {structure && (
+          <Card className="border-2 border-accent/30">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                🗂️ 文档整体结构
+                {structure.total_pages && <span className="text-xs text-muted-foreground font-normal">（约{structure.total_pages}页）</span>}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {structure.summary && (
+                <p className="text-sm text-muted-foreground bg-muted/50 rounded-lg p-3 mb-3">{structure.summary}</p>
               )}
-            </TabsTrigger>
-            <TabsTrigger value="traps" className="text-xs gap-1">
-              <AlertTriangle className="w-3.5 h-3.5" />
-              陷阱项
-            </TabsTrigger>
-            <TabsTrigger value="conflicts" className="text-xs gap-1">
-              <GitCompare className="w-3.5 h-3.5" />
-              逻辑冲突
-              {a.conflict_items?.length > 0 && (
-                <Badge className="ml-1 text-[10px] px-1 py-0 h-4 bg-purple-100 text-purple-800">{a.conflict_items.length}</Badge>
-              )}
-            </TabsTrigger>
-            <TabsTrigger value="scoring" className="text-xs gap-1">
-              <BarChart3 className="w-3.5 h-3.5" />
-              评分表
-            </TabsTrigger>
-            <TabsTrigger value="keywords" className="text-xs gap-1">
-              <Tag className="w-3.5 h-3.5" />
-              关键词
-            </TabsTrigger>
-            <TabsTrigger value="personnel" className="text-xs gap-1">
-              <Users className="w-3.5 h-3.5" />
-              人员要求
-            </TabsTrigger>
-          </TabsList>
+              <div className="space-y-0.5">
+                {structure.sections?.map((section) => renderStructureSection(section))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
-          {/* Disqualification items */}
-          <TabsContent value="disqualification" className="space-y-3 mt-4">
-            {(a.disqualification_items as any[])?.length > 0 ? (
-              (a.disqualification_items as any[]).map((item: any, i: number) => {
-                const sev = severityConfig[item.severity] || severityConfig.medium;
-                return (
-                  <Card key={i} className="border-l-4" style={{ borderLeftColor: item.severity === "critical" ? "#ef4444" : item.severity === "high" ? "#f97316" : "#eab308" }}>
-                    <CardContent className="p-4">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-1">
-                            <ShieldAlert className="w-4 h-4 text-red-500 shrink-0" />
+        {/* Step 2 trigger: Show detailed parsing button when structure is ready */}
+        {isStructureReady && (
+          <Card className="border-2 border-accent/50 bg-accent/5">
+            <CardContent className="p-5 space-y-4">
+              <div className="flex items-center gap-2 text-accent">
+                <FileSearch className="w-5 h-5" />
+                <h3 className="font-semibold">结构分析已完成，请开始详细解析</h3>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                AI已识别出文档的整体结构，接下来将根据上述结构，结合自定义解析清单，逐章节详细解读每一块的具体内容。
+              </p>
+              <div className="space-y-2">
+                <Label className="flex items-center gap-2 text-sm">
+                  📝 自定义解析清单
+                  <span className="text-xs text-muted-foreground font-normal">（可修改后再解析）</span>
+                </Label>
+                <Textarea
+                  value={editingPrompt}
+                  onChange={(e) => setEditingPrompt(e.target.value)}
+                  className="min-h-[100px] text-sm"
+                  disabled={detailParsing}
+                />
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  onClick={handleDetailParse}
+                  disabled={detailParsing}
+                  className="gap-2"
+                >
+                  {detailParsing ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileSearch className="w-4 h-4" />}
+                  {detailParsing ? "详细解析中..." : "开始详细解析"}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={handleReAnalyze}
+                  disabled={reAnalyzing || detailParsing}
+                  size="sm"
+                  className="gap-2"
+                >
+                  {reAnalyzing ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                  重新分析结构
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Completed: Show detailed results */}
+        {isCompleted && (
+          <>
+            {a.summary && (
+              <Card>
+                <CardContent className="p-4">
+                  <p className="text-sm text-foreground leading-relaxed">{a.summary}</p>
+                </CardContent>
+              </Card>
+            )}
+
+            <Card className="border-2 border-accent/30">
+              <CardContent className="p-5">
+                <h3 className="text-sm font-bold text-foreground mb-3 flex items-center gap-2">📋 招标基本信息</h3>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="space-y-1">
+                    <div className="text-xs text-muted-foreground">投标截止时间</div>
+                    <div className={`text-sm font-bold ${a.bid_deadline ? "text-red-600" : "text-muted-foreground"}`}>
+                      {a.bid_deadline
+                        ? new Date(a.bid_deadline).toLocaleString("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })
+                        : "未识别"}
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <div className="text-xs text-muted-foreground">投标地点</div>
+                    <div className={`text-sm font-bold ${a.bid_location ? "text-blue-600" : "text-muted-foreground"}`}>
+                      {a.bid_location || "未识别"}
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <div className="text-xs text-muted-foreground">是否讲标</div>
+                    <div className={`text-sm font-bold ${a.requires_presentation === true ? "text-orange-600" : a.requires_presentation === false ? "text-green-600" : "text-muted-foreground"}`}>
+                      {a.requires_presentation === true ? "✅ 需要讲标" : a.requires_presentation === false ? "❌ 无需讲标" : "未识别"}
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <div className="text-xs text-muted-foreground">投标保证金</div>
+                    <div className={`text-sm font-bold ${a.deposit_amount ? "text-amber-600" : "text-muted-foreground"}`}>
+                      {a.deposit_amount || "未识别"}
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-2 pt-4 px-4">
+                <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                  📝 解析提示词
+                  <span className="text-xs text-muted-foreground font-normal">（修改后可重新解析）</span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="px-4 pb-4 space-y-3">
+                <Textarea
+                  value={editingPrompt}
+                  onChange={(e) => setEditingPrompt(e.target.value)}
+                  className="min-h-[100px] text-sm"
+                  disabled={reAnalyzing}
+                />
+                <div className="flex gap-2">
+                  <Button
+                    onClick={handleReAnalyze}
+                    disabled={reAnalyzing}
+                    size="sm"
+                    className="gap-2"
+                  >
+                    {reAnalyzing ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileSearch className="w-4 h-4" />}
+                    {reAnalyzing ? "重新解析中..." : "重新解析"}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Tabs defaultValue="disqualification">
+              <TabsList className="grid grid-cols-6 w-full">
+                <TabsTrigger value="disqualification" className="text-xs gap-1">
+                  <ShieldAlert className="w-3.5 h-3.5" />
+                  废标项
+                  {a.disqualification_items?.length > 0 && (
+                    <Badge variant="destructive" className="ml-1 text-[10px] px-1 py-0 h-4">{a.disqualification_items.length}</Badge>
+                  )}
+                </TabsTrigger>
+                <TabsTrigger value="traps" className="text-xs gap-1">
+                  <AlertTriangle className="w-3.5 h-3.5" />
+                  陷阱项
+                </TabsTrigger>
+                <TabsTrigger value="conflicts" className="text-xs gap-1">
+                  <GitCompare className="w-3.5 h-3.5" />
+                  逻辑冲突
+                  {a.conflict_items?.length > 0 && (
+                    <Badge className="ml-1 text-[10px] px-1 py-0 h-4 bg-purple-100 text-purple-800">{a.conflict_items.length}</Badge>
+                  )}
+                </TabsTrigger>
+                <TabsTrigger value="scoring" className="text-xs gap-1">
+                  <BarChart3 className="w-3.5 h-3.5" />
+                  评分表
+                </TabsTrigger>
+                <TabsTrigger value="keywords" className="text-xs gap-1">
+                  <Tag className="w-3.5 h-3.5" />
+                  关键词
+                </TabsTrigger>
+                <TabsTrigger value="personnel" className="text-xs gap-1">
+                  <Users className="w-3.5 h-3.5" />
+                  人员要求
+                </TabsTrigger>
+              </TabsList>
+
+              {/* Disqualification items */}
+              <TabsContent value="disqualification" className="space-y-3 mt-4">
+                {(a.disqualification_items as any[])?.length > 0 ? (
+                  (a.disqualification_items as any[]).map((item: any, i: number) => {
+                    const sev = severityConfig[item.severity] || severityConfig.medium;
+                    return (
+                      <Card key={i} className="border-l-4" style={{ borderLeftColor: item.severity === "critical" ? "#ef4444" : item.severity === "high" ? "#f97316" : "#eab308" }}>
+                        <CardContent className="p-4">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-1">
+                                <ShieldAlert className="w-4 h-4 text-red-500 shrink-0" />
+                                <span className="font-medium text-foreground text-sm">{item.item}</span>
+                                <span className={`text-xs px-2 py-0.5 rounded-full border ${sev.color}`}>{sev.label}</span>
+                              </div>
+                              {item.source_text && (
+                                <p className="text-xs text-muted-foreground mt-1 bg-muted/50 p-2 rounded italic">
+                                  「{item.source_text}」
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    );
+                  })
+                ) : (
+                  <p className="text-center text-muted-foreground py-8">未识别到废标项</p>
+                )}
+              </TabsContent>
+
+              {/* Trap items */}
+              <TabsContent value="traps" className="space-y-3 mt-4">
+                {(a.trap_items as any[])?.length > 0 ? (
+                  (a.trap_items as any[]).map((item: any, i: number) => (
+                    <Card key={i}>
+                      <CardContent className="p-4">
+                        <div className="flex items-center gap-2 mb-2">
+                          <AlertTriangle className={`w-4 h-4 ${item.risk_level === "high" ? "text-red-500" : item.risk_level === "medium" ? "text-orange-500" : "text-yellow-500"}`} />
+                          <span className="font-medium text-foreground text-sm">{item.item}</span>
+                          <Badge variant="outline" className="text-xs">
+                            {item.risk_level === "high" ? "高风险" : item.risk_level === "medium" ? "中风险" : "低风险"}
+                          </Badge>
+                        </div>
+                        <p className="text-xs text-muted-foreground mb-2">{item.description}</p>
+                        {item.suggestion && (
+                          <div className="text-xs bg-accent/10 text-accent-foreground p-2 rounded">
+                            💡 建议: {item.suggestion}
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  ))
+                ) : (
+                  <p className="text-center text-muted-foreground py-8">未识别到陷阱项</p>
+                )}
+              </TabsContent>
+
+              {/* Conflict / Logic error items */}
+              <TabsContent value="conflicts" className="space-y-3 mt-4">
+                {(a.conflict_items as any[])?.length > 0 ? (
+                  (a.conflict_items as any[]).map((item: any, i: number) => {
+                    const sev = severityConfig[item.severity] || severityConfig.medium;
+                    return (
+                      <Card key={i} className="border-l-4" style={{ borderLeftColor: item.severity === "critical" ? "#a855f7" : item.severity === "high" ? "#8b5cf6" : "#c084fc" }}>
+                        <CardContent className="p-4">
+                          <div className="flex items-center gap-2 mb-2">
+                            <GitCompare className="w-4 h-4 text-purple-500 shrink-0" />
                             <span className="font-medium text-foreground text-sm">{item.item}</span>
                             <span className={`text-xs px-2 py-0.5 rounded-full border ${sev.color}`}>{sev.label}</span>
                           </div>
-                          {item.source_text && (
-                            <p className="text-xs text-muted-foreground mt-1 bg-muted/50 p-2 rounded italic">
-                              「{item.source_text}」
-                            </p>
+                          <p className="text-xs text-muted-foreground mb-2">{item.detail}</p>
+                          {item.location && (
+                            <div className="text-xs text-muted-foreground/70 italic">
+                              📍 位置: {item.location}
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
+                    );
+                  })
+                ) : (
+                  <p className="text-center text-muted-foreground py-8">未识别到逻辑冲突项</p>
+                )}
+              </TabsContent>
+
+              {/* Scoring table */}
+              <TabsContent value="scoring" className="mt-4">
+                {(a.scoring_table as any[])?.length > 0 ? (
+                  <div className="border rounded-lg overflow-hidden">
+                    <table className="w-full text-sm">
+                      <thead className="bg-muted">
+                        <tr>
+                          <th className="text-left p-3 font-medium">分类</th>
+                          <th className="text-left p-3 font-medium">评分项</th>
+                          <th className="text-left p-3 font-medium w-20">分值</th>
+                          <th className="text-left p-3 font-medium">评分细则</th>
+                          <th className="text-left p-3 font-medium">佐证材料</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(a.scoring_table as any[]).map((row: any, i: number) => (
+                          <tr key={i} className="border-t">
+                            <td className="p-3 text-xs">{row.category}</td>
+                            <td className="p-3 text-xs font-medium">{row.item}</td>
+                            <td className="p-3 text-xs font-bold text-accent">{row.weight}</td>
+                            <td className="p-3 text-xs">{row.criteria}</td>
+                            <td className="p-3 text-xs text-muted-foreground">{row.evidence_required || "-"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <p className="text-center text-muted-foreground py-8">未识别到评分表</p>
+                )}
+              </TabsContent>
+
+              {/* Keywords */}
+              <TabsContent value="keywords" className="mt-4 space-y-6">
+                <div>
+                  <h4 className="text-sm font-semibold text-foreground mb-2 flex items-center gap-2">
+                    🔧 专业技能关键词
+                  </h4>
+                  <div className="flex flex-wrap gap-2">
+                    {(a.technical_keywords as string[])?.length > 0 ? (
+                      (a.technical_keywords as string[]).map((kw: string, i: number) => (
+                        <Badge key={i} className="bg-blue-100 text-blue-800 hover:bg-blue-200">{kw}</Badge>
+                      ))
+                    ) : (
+                      <span className="text-sm text-muted-foreground">无</span>
+                    )}
+                  </div>
+                </div>
+                <div>
+                  <h4 className="text-sm font-semibold text-foreground mb-2 flex items-center gap-2">
+                    💼 业务技能关键词
+                  </h4>
+                  <div className="flex flex-wrap gap-2">
+                    {(a.business_keywords as string[])?.length > 0 ? (
+                      (a.business_keywords as string[]).map((kw: string, i: number) => (
+                        <Badge key={i} className="bg-green-100 text-green-800 hover:bg-green-200">{kw}</Badge>
+                      ))
+                    ) : (
+                      <span className="text-sm text-muted-foreground">无</span>
+                    )}
+                  </div>
+                </div>
+                <div>
+                  <h4 className="text-sm font-semibold text-foreground mb-2 flex items-center gap-2">
+                    📋 工作职责关键词
+                  </h4>
+                  <div className="flex flex-wrap gap-2">
+                    {(a.responsibility_keywords as string[])?.length > 0 ? (
+                      (a.responsibility_keywords as string[]).map((kw: string, i: number) => (
+                        <Badge key={i} className="bg-purple-100 text-purple-800 hover:bg-purple-200">{kw}</Badge>
+                      ))
+                    ) : (
+                      <span className="text-sm text-muted-foreground">无</span>
+                    )}
+                  </div>
+                </div>
+              </TabsContent>
+
+              {/* Personnel */}
+              <TabsContent value="personnel" className="space-y-3 mt-4">
+                {(a.personnel_requirements as any[])?.length > 0 ? (
+                  (a.personnel_requirements as any[]).map((p: any, i: number) => (
+                    <Card key={i}>
+                      <CardContent className="p-4">
+                        <div className="flex items-center gap-2 mb-2">
+                          <Users className="w-4 h-4 text-accent" />
+                          <span className="font-medium text-foreground">{p.role}</span>
+                          {p.count && <Badge variant="secondary">{p.count}人</Badge>}
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                          {p.qualifications && (
+                            <div><span className="text-muted-foreground">学历/资质: </span><span className="text-foreground">{p.qualifications}</span></div>
+                          )}
+                          {p.experience_years && (
+                            <div><span className="text-muted-foreground">经验要求: </span><span className="text-foreground">{p.experience_years}年以上</span></div>
+                          )}
+                          {p.certifications?.length > 0 && (
+                            <div className="sm:col-span-2">
+                              <span className="text-muted-foreground">所需证书: </span>
+                              {p.certifications.map((c: string, ci: number) => (
+                                <Badge key={ci} variant="outline" className="text-xs mr-1 mt-1">{c}</Badge>
+                              ))}
+                            </div>
+                          )}
+                          {p.specific_requirements && (
+                            <div className="sm:col-span-2"><span className="text-muted-foreground">特殊要求: </span><span className="text-foreground">{p.specific_requirements}</span></div>
                           )}
                         </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                );
-              })
-            ) : (
-              <p className="text-center text-muted-foreground py-8">未识别到废标项</p>
-            )}
-          </TabsContent>
-
-          {/* Trap items */}
-          <TabsContent value="traps" className="space-y-3 mt-4">
-            {(a.trap_items as any[])?.length > 0 ? (
-              (a.trap_items as any[]).map((item: any, i: number) => (
-                <Card key={i}>
-                  <CardContent className="p-4">
-                    <div className="flex items-center gap-2 mb-2">
-                      <AlertTriangle className={`w-4 h-4 ${item.risk_level === "high" ? "text-red-500" : item.risk_level === "medium" ? "text-orange-500" : "text-yellow-500"}`} />
-                      <span className="font-medium text-foreground text-sm">{item.item}</span>
-                      <Badge variant="outline" className="text-xs">
-                        {item.risk_level === "high" ? "高风险" : item.risk_level === "medium" ? "中风险" : "低风险"}
-                      </Badge>
-                    </div>
-                    <p className="text-xs text-muted-foreground mb-2">{item.description}</p>
-                    {item.suggestion && (
-                      <div className="text-xs bg-accent/10 text-accent-foreground p-2 rounded">
-                        💡 建议: {item.suggestion}
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              ))
-            ) : (
-              <p className="text-center text-muted-foreground py-8">未识别到陷阱项</p>
-            )}
-          </TabsContent>
-
-          {/* Conflict / Logic error items */}
-          <TabsContent value="conflicts" className="space-y-3 mt-4">
-            {(a.conflict_items as any[])?.length > 0 ? (
-              (a.conflict_items as any[]).map((item: any, i: number) => {
-                const sev = severityConfig[item.severity] || severityConfig.medium;
-                return (
-                  <Card key={i} className="border-l-4" style={{ borderLeftColor: item.severity === "critical" ? "#a855f7" : item.severity === "high" ? "#8b5cf6" : "#c084fc" }}>
-                    <CardContent className="p-4">
-                      <div className="flex items-center gap-2 mb-2">
-                        <GitCompare className="w-4 h-4 text-purple-500 shrink-0" />
-                        <span className="font-medium text-foreground text-sm">{item.item}</span>
-                        <span className={`text-xs px-2 py-0.5 rounded-full border ${sev.color}`}>{sev.label}</span>
-                      </div>
-                      <p className="text-xs text-muted-foreground mb-2">{item.detail}</p>
-                      {item.location && (
-                        <div className="text-xs text-muted-foreground/70 italic">
-                          📍 位置: {item.location}
-                        </div>
-                      )}
-                    </CardContent>
-                  </Card>
-                );
-              })
-            ) : (
-              <p className="text-center text-muted-foreground py-8">未识别到逻辑冲突项</p>
-            )}
-          </TabsContent>
-
-          {/* Scoring table */}
-          <TabsContent value="scoring" className="mt-4">
-            {(a.scoring_table as any[])?.length > 0 ? (
-              <div className="border rounded-lg overflow-hidden">
-                <table className="w-full text-sm">
-                  <thead className="bg-muted">
-                    <tr>
-                      <th className="text-left p-3 font-medium">分类</th>
-                      <th className="text-left p-3 font-medium">评分项</th>
-                      <th className="text-left p-3 font-medium w-20">分值</th>
-                      <th className="text-left p-3 font-medium">评分细则</th>
-                      <th className="text-left p-3 font-medium">佐证材料</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(a.scoring_table as any[]).map((row: any, i: number) => (
-                      <tr key={i} className="border-t">
-                        <td className="p-3 text-xs">{row.category}</td>
-                        <td className="p-3 text-xs font-medium">{row.item}</td>
-                        <td className="p-3 text-xs font-bold text-accent">{row.weight}</td>
-                        <td className="p-3 text-xs">{row.criteria}</td>
-                        <td className="p-3 text-xs text-muted-foreground">{row.evidence_required || "-"}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <p className="text-center text-muted-foreground py-8">未识别到评分表</p>
-            )}
-          </TabsContent>
-
-          {/* Keywords */}
-          <TabsContent value="keywords" className="mt-4 space-y-6">
-            <div>
-              <h4 className="text-sm font-semibold text-foreground mb-2 flex items-center gap-2">
-                🔧 专业技能关键词
-              </h4>
-              <div className="flex flex-wrap gap-2">
-                {(a.technical_keywords as string[])?.length > 0 ? (
-                  (a.technical_keywords as string[]).map((kw: string, i: number) => (
-                    <Badge key={i} className="bg-blue-100 text-blue-800 hover:bg-blue-200">{kw}</Badge>
+                      </CardContent>
+                    </Card>
                   ))
                 ) : (
-                  <span className="text-sm text-muted-foreground">无</span>
+                  <p className="text-center text-muted-foreground py-8">未识别到人员要求</p>
                 )}
-              </div>
-            </div>
-            <div>
-              <h4 className="text-sm font-semibold text-foreground mb-2 flex items-center gap-2">
-                💼 业务技能关键词
-              </h4>
-              <div className="flex flex-wrap gap-2">
-                {(a.business_keywords as string[])?.length > 0 ? (
-                  (a.business_keywords as string[]).map((kw: string, i: number) => (
-                    <Badge key={i} className="bg-green-100 text-green-800 hover:bg-green-200">{kw}</Badge>
-                  ))
-                ) : (
-                  <span className="text-sm text-muted-foreground">无</span>
-                )}
-              </div>
-            </div>
-            <div>
-              <h4 className="text-sm font-semibold text-foreground mb-2 flex items-center gap-2">
-                📋 工作职责关键词
-              </h4>
-              <div className="flex flex-wrap gap-2">
-                {(a.responsibility_keywords as string[])?.length > 0 ? (
-                  (a.responsibility_keywords as string[]).map((kw: string, i: number) => (
-                    <Badge key={i} className="bg-purple-100 text-purple-800 hover:bg-purple-200">{kw}</Badge>
-                  ))
-                ) : (
-                  <span className="text-sm text-muted-foreground">无</span>
-                )}
-              </div>
-            </div>
-          </TabsContent>
-
-          {/* Personnel */}
-          <TabsContent value="personnel" className="space-y-3 mt-4">
-            {(a.personnel_requirements as any[])?.length > 0 ? (
-              (a.personnel_requirements as any[]).map((p: any, i: number) => (
-                <Card key={i}>
-                  <CardContent className="p-4">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Users className="w-4 h-4 text-accent" />
-                      <span className="font-medium text-foreground">{p.role}</span>
-                      {p.count && <Badge variant="secondary">{p.count}人</Badge>}
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                      {p.qualifications && (
-                        <div><span className="text-muted-foreground">学历/资质: </span><span className="text-foreground">{p.qualifications}</span></div>
-                      )}
-                      {p.experience_years && (
-                        <div><span className="text-muted-foreground">经验要求: </span><span className="text-foreground">{p.experience_years}年以上</span></div>
-                      )}
-                      {p.certifications?.length > 0 && (
-                        <div className="sm:col-span-2">
-                          <span className="text-muted-foreground">所需证书: </span>
-                          {p.certifications.map((c: string, ci: number) => (
-                            <Badge key={ci} variant="outline" className="text-xs mr-1 mt-1">{c}</Badge>
-                          ))}
-                        </div>
-                      )}
-                      {p.specific_requirements && (
-                        <div className="sm:col-span-2"><span className="text-muted-foreground">特殊要求: </span><span className="text-foreground">{p.specific_requirements}</span></div>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-              ))
-            ) : (
-              <p className="text-center text-muted-foreground py-8">未识别到人员要求</p>
-            )}
-          </TabsContent>
-        </Tabs>
+              </TabsContent>
+            </Tabs>
+          </>
+        )}
       </div>
     );
   }
@@ -788,7 +973,7 @@ export default function BidParser() {
             <Card
               key={a.id}
               className="hover:shadow-card-hover transition-shadow cursor-pointer"
-              onClick={() => a.ai_status === "completed" && setSelectedAnalysis(a)}
+              onClick={() => (a.ai_status === "completed" || a.ai_status === "structure_ready") && setSelectedAnalysis(a)}
             >
               <CardContent className="p-4">
                 <div className="flex items-start justify-between gap-3">
@@ -815,9 +1000,14 @@ export default function BidParser() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
-                    {a.ai_status === "processing" && (
+                    {(a.ai_status === "processing" || a.ai_status === "analyzing_structure") && (
                       <Badge className="bg-blue-100 text-blue-800 gap-1 whitespace-nowrap">
-                        <Loader2 className="w-3 h-3 animate-spin" />解析中
+                        <Loader2 className="w-3 h-3 animate-spin" />{a.ai_status === "analyzing_structure" ? "分析结构中" : "详细解析中"}
+                      </Badge>
+                    )}
+                    {a.ai_status === "structure_ready" && (
+                      <Badge className="bg-amber-100 text-amber-800 whitespace-nowrap">
+                        待详细解析
                       </Badge>
                     )}
                     {a.ai_status === "completed" && a.risk_score !== null && (
@@ -828,9 +1018,9 @@ export default function BidParser() {
                     {a.ai_status === "failed" && (
                       <Badge variant="destructive" className="whitespace-nowrap">解析失败</Badge>
                     )}
-                    {a.ai_status === "completed" && (
+                    {(a.ai_status === "completed" || a.ai_status === "structure_ready") && (
                       <Button variant="ghost" size="sm" className="text-xs gap-1 shrink-0">
-                        <Eye className="w-3.5 h-3.5" />查看
+                        <Eye className="w-3.5 h-3.5" />{a.ai_status === "structure_ready" ? "查看结构" : "查看"}
                       </Button>
                     )}
                     <Button

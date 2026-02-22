@@ -76,6 +76,7 @@ export type Database = {
           deposit_amount: string | null
           disqualification_items: Json | null
           document_id: string | null
+          document_structure: Json | null
           file_path: string | null
           id: string
           personnel_requirements: Json | null
@@ -101,6 +102,7 @@ export type Database = {
           deposit_amount?: string | null
           disqualification_items?: Json | null
           document_id?: string | null
+          document_structure?: Json | null
           file_path?: string | null
           id?: string
           personnel_requirements?: Json | null
@@ -126,6 +128,7 @@ export type Database = {
           deposit_amount?: string | null
           disqualification_items?: Json | null
           document_id?: string | null
+          document_structure?: Json | null
           file_path?: string | null
           id?: string
           personnel_requirements?: Json | null
