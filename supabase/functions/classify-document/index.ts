@@ -36,7 +36,7 @@ amount_range 示例：100万以下、100-500万、500-1000万、1000万-5000万�
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "google/gemini-3-flash-preview",
+        model: "openai/gpt-5.2",
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: `文件名: ${fileName}\n文件类型: ${fileType}` },
