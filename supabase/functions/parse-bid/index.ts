@@ -128,10 +128,13 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { analysisId, content, projectName, filePath, fileType, customPrompt } = await req.json();
+    const { analysisId, content, projectName, filePath, fileType, customPrompt, documentStructure } = await req.json();
 
-    // Build system prompt with custom instructions
+    // Build system prompt with custom instructions and structure context
     let systemPrompt = SYSTEM_PROMPT;
+    if (documentStructure) {
+      systemPrompt += `\n\n【文档整体结构（已预先分析）】\n请参照以下文档结构，逐章节详细解析每一部分的具体内容：\n${JSON.stringify(documentStructure, null, 2)}`;
+    }
     if (customPrompt) {
       systemPrompt += `\n\n【用户自定义解析重点】\n请特别关注以下内容：\n${customPrompt}`;
     }
