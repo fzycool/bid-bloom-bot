@@ -417,12 +417,22 @@ export default function BidComparison() {
                 ref={fileInputRef}
                 type="file"
                 className="hidden"
-                accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                 multiple
                 onChange={(e) => {
                   const files = e.target.files;
                   if (files && files.length > 0) {
-                    setUploadedFiles((prev) => [...prev, ...Array.from(files)]);
+                    const newFiles = Array.from(files);
+                    const docFiles = newFiles.filter(f => f.name.toLowerCase().endsWith('.doc') && !f.name.toLowerCase().endsWith('.docx'));
+                    if (docFiles.length > 0) {
+                      toast({ title: "不支持 .doc 格式", description: "请将 .doc 文件转换为 .docx 或 .pdf 后再上传", variant: "destructive" });
+                    }
+                    const validFiles = newFiles.filter(f => !f.name.toLowerCase().endsWith('.doc') || f.name.toLowerCase().endsWith('.docx'));
+                    if (validFiles.length > 0) {
+                      setTimeout(() => {
+                        setUploadedFiles((prev) => [...prev, ...validFiles]);
+                      }, 50);
+                    }
                   }
                   e.target.value = "";
                 }}
