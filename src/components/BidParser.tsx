@@ -88,6 +88,7 @@ export default function BidParser() {
   const [editingPrompt, setEditingPrompt] = useState("");
   const [reAnalyzing, setReAnalyzing] = useState(false);
   const [detailParsing, setDetailParsing] = useState(false);
+  const [tokenUsage, setTokenUsage] = useState<{ prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } | null>(null);
 
   const fetchAnalyses = useCallback(async () => {
     if (!user) return;
@@ -156,7 +157,7 @@ export default function BidParser() {
 
         try {
           // Step 1: Analyze structure first
-          const { error: structErr } = await supabase.functions.invoke("parse-bid-structure", {
+          const { data: respData, error: structErr } = await supabase.functions.invoke("parse-bid-structure", {
             body: {
               analysisId: analysis.id,
               projectName: name,
@@ -165,6 +166,7 @@ export default function BidParser() {
             },
           });
           if (structErr) throw structErr;
+          if (respData?.usage) setTokenUsage(respData.usage);
           lastAnalysis = analysis;
         } catch (err: any) {
           toast({ title: `${file.name} 结构分析失败`, description: err.message, variant: "destructive" });
@@ -201,7 +203,7 @@ export default function BidParser() {
 
       try {
         // Step 1: Analyze structure first
-        const { error: structErr } = await supabase.functions.invoke("parse-bid-structure", {
+        const { data: respData, error: structErr } = await supabase.functions.invoke("parse-bid-structure", {
           body: {
             analysisId: analysis.id,
             projectName: projectName || "未命名项目",
@@ -209,6 +211,7 @@ export default function BidParser() {
           },
         });
         if (structErr) throw structErr;
+        if (respData?.usage) setTokenUsage(respData.usage);
 
         toast({ title: "结构分析完成", description: "请查看文档结构后进行详细解析" });
         setContent("");
@@ -255,8 +258,13 @@ export default function BidParser() {
       await supabase.from("bid_analyses").update({ ai_status: "processing" } as any).eq("id", selectedAnalysis.id);
       setSelectedAnalysis((prev) => prev ? { ...prev, ai_status: "processing" } : prev);
 
-      const { error: fnErr } = await supabase.functions.invoke("parse-bid", { body });
+      const { data: respData, error: fnErr } = await supabase.functions.invoke("parse-bid", { body });
       if (fnErr) throw fnErr;
+      if (respData?.usage) setTokenUsage((prev) => ({
+        prompt_tokens: (prev?.prompt_tokens || 0) + (respData.usage.prompt_tokens || 0),
+        completion_tokens: (prev?.completion_tokens || 0) + (respData.usage.completion_tokens || 0),
+        total_tokens: (prev?.total_tokens || 0) + (respData.usage.total_tokens || 0),
+      }));
 
       toast({ title: "详细解析完成" });
       await fetchAnalyses();
@@ -302,8 +310,9 @@ export default function BidParser() {
       }
 
       // Step 1: Re-analyze structure
-      const { error: structErr } = await supabase.functions.invoke("parse-bid-structure", { body });
+      const { data: respData, error: structErr } = await supabase.functions.invoke("parse-bid-structure", { body });
       if (structErr) throw structErr;
+      if (respData?.usage) setTokenUsage(respData.usage);
 
       toast({ title: "结构重新分析完成", description: "请查看后进行详细解析" });
       await fetchAnalyses();
@@ -380,7 +389,7 @@ export default function BidParser() {
         <div className="flex items-center justify-between">
           <div>
             <button
-              onClick={() => setSelectedAnalysis(null)}
+              onClick={() => { setSelectedAnalysis(null); setTokenUsage(null); }}
               className="text-sm text-accent hover:underline mb-1"
             >
               ← 返回列表
@@ -388,6 +397,12 @@ export default function BidParser() {
             <h2 className="text-xl font-bold text-foreground">{a.project_name}</h2>
             <p className="text-sm text-muted-foreground">
               解析于 {new Date(a.created_at).toLocaleString("zh-CN")}
+              {tokenUsage && (
+                <span className="ml-3 inline-flex items-center gap-1 text-xs font-mono bg-muted px-2 py-0.5 rounded">
+                  🔢 Token: {tokenUsage.total_tokens?.toLocaleString()}
+                  <span className="text-muted-foreground/70">（输入 {tokenUsage.prompt_tokens?.toLocaleString()} / 输出 {tokenUsage.completion_tokens?.toLocaleString()}）</span>
+                </span>
+              )}
             </p>
             {isCompleted && (
               <div className="flex items-center gap-3 mt-2 flex-wrap">
