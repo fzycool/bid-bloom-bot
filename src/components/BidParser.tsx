@@ -1067,9 +1067,21 @@ export default function BidParser() {
                     const files = e.target.files;
                     if (files && files.length > 0) {
                       const fileArray = Array.from(files);
-                      setUploadedFiles((prev) => [...prev, ...fileArray]);
-                      if (!projectName && fileArray.length === 1) {
-                        setProjectName(fileArray[0].name.replace(/\.(pdf|docx?|xlsx?|txt)$/i, ""));
+                      const allowedExts = /\.(pdf|docx?|xlsx?|xls)$/i;
+                      const validFiles = fileArray.filter((f) => allowedExts.test(f.name));
+                      const invalidFiles = fileArray.filter((f) => !allowedExts.test(f.name));
+                      if (invalidFiles.length > 0) {
+                        toast({
+                          title: "不支持的文件格式",
+                          description: `${invalidFiles.map((f) => f.name).join("、")} 格式不支持，请上传 PDF、Word 或 Excel 文件`,
+                          variant: "destructive",
+                        });
+                      }
+                      if (validFiles.length > 0) {
+                        setUploadedFiles((prev) => [...prev, ...validFiles]);
+                        if (!projectName && validFiles.length === 1) {
+                          setProjectName(validFiles[0].name.replace(/\.(pdf|docx?|xlsx?|txt)$/i, ""));
+                        }
                       }
                     }
                     // Reset after a short delay to avoid clearing file references
