@@ -14,6 +14,7 @@ import {
   Plus, FileText, CheckCircle, AlertTriangle, XCircle,
   RefreshCw, Users, ChevronRight, ChevronDown, Loader2,
   ClipboardCheck, Trash2, Search, Sparkles, Download, Upload, Paperclip,
+  ShieldCheck, AlertCircle, Clock, Image as ImageIcon,
 } from "lucide-react";
 import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType } from "docx";
 import { saveAs } from "file-saver";
@@ -55,6 +56,34 @@ interface Proposal {
   custom_prompt: string | null;
   bid_analysis_id: string | null;
   created_at: string;
+}
+
+interface CompanyMaterialMatch {
+  id: string;
+  file_name: string;
+  file_path: string;
+  material_type: string | null;
+  content_description: string | null;
+  expire_at: string | null;
+  issued_at: string | null;
+  certificate_number: string | null;
+  issuing_authority: string | null;
+  ai_status: string;
+}
+
+function getExpiryStatus(expireAt: string | null): {
+  label: string;
+  color: string;
+  icon: typeof CheckCircle;
+} {
+  if (!expireAt) return { label: "长期有效", color: "bg-green-100 text-green-800", icon: ShieldCheck };
+  const now = new Date();
+  const expiry = new Date(expireAt);
+  const diffDays = Math.ceil((expiry.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+  if (diffDays < 0) return { label: `已过期${Math.abs(diffDays)}天`, color: "bg-red-100 text-red-800", icon: AlertCircle };
+  if (diffDays <= 30) return { label: `${diffDays}天后过期`, color: "bg-yellow-100 text-yellow-800", icon: AlertTriangle };
+  if (diffDays <= 90) return { label: `${diffDays}天后过期`, color: "bg-orange-100 text-orange-800", icon: Clock };
+  return { label: `有效期至${expireAt}`, color: "bg-green-100 text-green-800", icon: ShieldCheck };
 }
 
 interface ProposalMaterial {
@@ -99,6 +128,8 @@ export default function BiddingAssistant() {
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
   const [uploadingMaterialId, setUploadingMaterialId] = useState<string | null>(null);
   const [expandedFormats, setExpandedFormats] = useState<Set<string>>(new Set());
+  const [companyMaterials, setCompanyMaterials] = useState<CompanyMaterialMatch[]>([]);
+  const [materialMatchMap, setMaterialMatchMap] = useState<Map<string, CompanyMaterialMatch>>(new Map());
   const fetchAnalyses = useCallback(async () => {
     if (!user) return;
     const { data } = await supabase
@@ -120,10 +151,40 @@ export default function BiddingAssistant() {
     setProposals((data as any[]) || []);
   }, [user]);
 
+  const fetchCompanyMaterials = useCallback(async () => {
+    if (!user) return [];
+    const { data } = await supabase
+      .from("company_materials")
+      .select("id, file_name, file_path, material_type, content_description, expire_at, issued_at, certificate_number, issuing_authority, ai_status")
+      .eq("user_id", user.id)
+      .eq("ai_status", "completed");
+    const cms = (data as CompanyMaterialMatch[]) || [];
+    setCompanyMaterials(cms);
+    return cms;
+  }, [user]);
+
+  const matchCompanyMaterials = useCallback((proposalMats: ProposalMaterial[], cms: CompanyMaterialMatch[]) => {
+    const matchMap = new Map<string, CompanyMaterialMatch>();
+    for (const pm of proposalMats) {
+      const name = (pm.material_name || "").toLowerCase().trim();
+      if (!name) continue;
+      // Try exact match on material_type or content_description
+      const match = cms.find((cm) => {
+        const cmType = (cm.material_type || "").toLowerCase().trim();
+        const cmDesc = (cm.content_description || "").toLowerCase().trim();
+        // 100% match: material_type equals material_name, or description contains material_name
+        return (cmType && cmType === name) || (cmDesc && cmDesc.includes(name)) || (cmType && name.includes(cmType));
+      });
+      if (match) matchMap.set(pm.id, match);
+    }
+    setMaterialMatchMap(matchMap);
+  }, []);
+
   const fetchProposalDetails = useCallback(async (proposalId: string) => {
-    const [{ data: secs }, { data: mats }] = await Promise.all([
+    const [{ data: secs }, { data: mats }, cms] = await Promise.all([
       supabase.from("proposal_sections").select("*").eq("proposal_id", proposalId).order("sort_order"),
       supabase.from("proposal_materials").select("*").eq("proposal_id", proposalId),
+      fetchCompanyMaterials(),
     ]);
 
     // Build tree
@@ -141,8 +202,10 @@ export default function BiddingAssistant() {
     });
 
     setSections(roots);
-    setMaterials((mats as any[]) || []);
-  }, []);
+    const proposalMats = (mats as any[]) || [];
+    setMaterials(proposalMats);
+    matchCompanyMaterials(proposalMats, cms);
+  }, [fetchCompanyMaterials, matchCompanyMaterials]);
 
   useEffect(() => { fetchAnalyses(); fetchProposals(); }, [fetchAnalyses, fetchProposals]);
 
@@ -410,15 +473,35 @@ export default function BiddingAssistant() {
     return Object.entries(groups).sort(([a], [b]) => a.localeCompare(b));
   };
 
-  const renderMaterialItem = (m: ProposalMaterial, icon: React.ReactNode, bgClass: string) => (
+  const renderMaterialItem = (m: ProposalMaterial, icon: React.ReactNode, bgClass: string) => {
+    const companyMatch = materialMatchMap.get(m.id);
+    const expiry = companyMatch ? getExpiryStatus(companyMatch.expire_at) : null;
+    const ExpiryIcon = expiry?.icon;
+
+    return (
     <div key={m.id} className={`flex items-start justify-between gap-3 text-sm p-3 rounded-lg border border-border/50 ${bgClass}`}>
       <div className="flex items-start gap-2.5 flex-1 min-w-0">
         {icon}
         <div className="min-w-0 flex-1">
-          <p className="font-semibold text-foreground">{m.material_name || "未知材料"}</p>
+          <div className="flex items-center gap-2 flex-wrap">
+            <p className="font-semibold text-foreground">{m.material_name || "未知材料"}</p>
+            {expiry && ExpiryIcon && (
+              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium ${expiry.color}`}>
+                <ExpiryIcon className="w-3 h-3" />
+                {expiry.label}
+              </span>
+            )}
+          </div>
           <p className="text-muted-foreground text-xs mt-1">{m.requirement_text}</p>
           {(m as any).material_format && (
             <p className="text-xs text-accent mt-1">📋 建议格式: {(m as any).material_format}</p>
+          )}
+          {companyMatch && (
+            <p className="text-xs text-blue-600 mt-1.5 flex items-center gap-1 font-medium">
+              <ImageIcon className="w-3 h-3" />
+              公司材料库已有: {companyMatch.content_description || companyMatch.file_name}
+              {companyMatch.certificate_number && <span className="text-muted-foreground ml-1">({companyMatch.certificate_number})</span>}
+            </p>
           )}
           {m.status === "uploaded" && m.matched_file_path && (
             <p className="text-xs text-green-600 mt-1.5 flex items-center gap-1 font-medium">
@@ -457,7 +540,8 @@ export default function BiddingAssistant() {
         </label>
       </div>
     </div>
-  );
+    );
+  };
 
   // ---- RENDER ----
   return (
