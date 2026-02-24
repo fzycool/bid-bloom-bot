@@ -1,0 +1,1 @@
+ALTER TABLE public.proposal_materials ADD COLUMN IF NOT EXISTS material_format text;
