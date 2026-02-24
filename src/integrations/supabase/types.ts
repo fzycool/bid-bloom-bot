@@ -245,6 +245,63 @@ export type Database = {
           },
         ]
       }
+      company_materials: {
+        Row: {
+          ai_extracted_info: Json | null
+          ai_status: string
+          certificate_number: string | null
+          content_description: string | null
+          created_at: string
+          expire_at: string | null
+          file_name: string
+          file_path: string
+          file_size: number
+          file_type: string | null
+          id: string
+          issued_at: string | null
+          issuing_authority: string | null
+          material_type: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          ai_extracted_info?: Json | null
+          ai_status?: string
+          certificate_number?: string | null
+          content_description?: string | null
+          created_at?: string
+          expire_at?: string | null
+          file_name: string
+          file_path: string
+          file_size?: number
+          file_type?: string | null
+          id?: string
+          issued_at?: string | null
+          issuing_authority?: string | null
+          material_type?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          ai_extracted_info?: Json | null
+          ai_status?: string
+          certificate_number?: string | null
+          content_description?: string | null
+          created_at?: string
+          expire_at?: string | null
+          file_name?: string
+          file_path?: string
+          file_size?: number
+          file_type?: string | null
+          id?: string
+          issued_at?: string | null
+          issuing_authority?: string | null
+          material_type?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       documents: {
         Row: {
           ai_metadata: Json | null

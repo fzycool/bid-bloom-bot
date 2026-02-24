@@ -17,3 +17,6 @@ verify_jwt = false
 
 [functions.holographic-audit]
 verify_jwt = false
+
+[functions.extract-material-info]
+verify_jwt = false
