@@ -458,9 +458,9 @@ export default function BiddingAssistant() {
     ? (() => { try { return JSON.parse(selectedProposal.outline_content); } catch { return null; } })()
     : null;
 
-  const hardMissing = materials.filter((m) => m.requirement_type === "hard" && m.status === "missing");
-  const softMissing = materials.filter((m) => m.requirement_type === "soft" && m.status === "missing");
-  const matched = materials.filter((m) => m.status === "matched" || m.status === "uploaded");
+  const hardMissing = materials.filter((m) => m.requirement_type === "hard" && m.status === "missing" && !materialMatchMap.has(m.id));
+  const softMissing = materials.filter((m) => m.requirement_type === "soft" && m.status === "missing" && !materialMatchMap.has(m.id));
+  const matched = materials.filter((m) => m.status === "matched" || m.status === "uploaded" || materialMatchMap.has(m.id));
 
   // Group materials by format category for structured upload view
   const groupMaterialsByFormat = (mats: ProposalMaterial[]) => {
@@ -512,32 +512,38 @@ export default function BiddingAssistant() {
         </div>
       </div>
       <div className="shrink-0 flex flex-col items-end gap-1.5">
-        <Badge variant={m.status === "uploaded" ? "default" : m.status === "matched" ? "secondary" : "outline"} className="text-[10px]">
-          {m.status === "uploaded" ? "✅ 已上传" : m.status === "matched" ? "已匹配" : "⚠️ 待上传"}
-        </Badge>
-        <label className="cursor-pointer">
-          <input
-            type="file"
-            className="hidden"
-            accept=".pdf,.docx,.doc,.xlsx,.xls,.jpg,.png,.jpeg"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) handleMaterialUpload(m.id, file);
-              e.target.value = "";
-            }}
-          />
-          <Button variant={m.status === "uploaded" ? "ghost" : "default"} size="sm" asChild disabled={uploadingMaterialId === m.id}>
-            <span>
-              {uploadingMaterialId === m.id ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              ) : m.status === "uploaded" ? (
-                <><RefreshCw className="w-3.5 h-3.5 mr-1" />重新上传</>
-              ) : (
-                <><Upload className="w-3.5 h-3.5 mr-1" />上传材料</>
-              )}
-            </span>
-          </Button>
-        </label>
+        {companyMatch ? (
+          <Badge variant="default" className="text-[10px]">✅ 已匹配公司材料</Badge>
+        ) : (
+          <>
+            <Badge variant={m.status === "uploaded" ? "default" : m.status === "matched" ? "secondary" : "outline"} className="text-[10px]">
+              {m.status === "uploaded" ? "✅ 已上传" : m.status === "matched" ? "已匹配" : "⚠️ 待上传"}
+            </Badge>
+            <label className="cursor-pointer">
+              <input
+                type="file"
+                className="hidden"
+                accept=".pdf,.docx,.doc,.xlsx,.xls,.jpg,.png,.jpeg"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) handleMaterialUpload(m.id, file);
+                  e.target.value = "";
+                }}
+              />
+              <Button variant={m.status === "uploaded" ? "ghost" : "default"} size="sm" asChild disabled={uploadingMaterialId === m.id}>
+                <span>
+                  {uploadingMaterialId === m.id ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : m.status === "uploaded" ? (
+                    <><RefreshCw className="w-3.5 h-3.5 mr-1" />重新上传</>
+                  ) : (
+                    <><Upload className="w-3.5 h-3.5 mr-1" />上传材料</>
+                  )}
+                </span>
+              </Button>
+            </label>
+          </>
+        )}
       </div>
     </div>
     );
