@@ -630,7 +630,7 @@ export default function BiddingAssistant() {
                     <CardTitle className="text-sm">投标文件提纲</CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <ScrollArea className="max-h-[600px]">
+                    <div>
                       {sections.length === 0 ? (
                         <p className="text-sm text-muted-foreground py-4">暂无提纲内容</p>
                       ) : (
@@ -645,7 +645,7 @@ export default function BiddingAssistant() {
                           ))}
                         </div>
                       )}
-                    </ScrollArea>
+                    </div>
                   </CardContent>
                 </Card>
               </TabsContent>
