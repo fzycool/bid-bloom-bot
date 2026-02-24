@@ -62,6 +62,7 @@ interface ProposalMaterial {
   requirement_text: string;
   requirement_type: string;
   material_name: string | null;
+  material_format: string | null;
   status: string;
   severity: string;
   matched_document_id: string | null;
@@ -346,21 +347,27 @@ export default function BiddingAssistant() {
   const matched = materials.filter((m) => m.status === "matched" || m.status === "uploaded");
 
   const renderMaterialItem = (m: ProposalMaterial, icon: React.ReactNode, bgClass: string) => (
-    <div key={m.id} className={`flex items-start justify-between gap-2 text-sm p-2 rounded ${bgClass}`}>
-      <div className="flex items-start gap-2 flex-1 min-w-0">
+    <div key={m.id} className={`flex items-start justify-between gap-3 text-sm p-3 rounded-lg border border-border/50 ${bgClass}`}>
+      <div className="flex items-start gap-2.5 flex-1 min-w-0">
         {icon}
-        <div className="min-w-0">
-          <p className="font-medium text-foreground">{m.material_name || "未知材料"}</p>
-          <p className="text-muted-foreground text-xs mt-0.5">{m.requirement_text}</p>
+        <div className="min-w-0 flex-1">
+          <p className="font-semibold text-foreground">{m.material_name || "未知材料"}</p>
+          <p className="text-muted-foreground text-xs mt-1">{m.requirement_text}</p>
+          {(m as any).material_format && (
+            <p className="text-xs text-accent mt-1">📋 建议格式: {(m as any).material_format}</p>
+          )}
           {m.status === "uploaded" && m.matched_file_path && (
-            <p className="text-xs text-green-600 mt-1 flex items-center gap-1">
+            <p className="text-xs text-green-600 mt-1.5 flex items-center gap-1 font-medium">
               <Paperclip className="w-3 h-3" />
-              已上传: {m.matched_file_path.split("/").pop()}
+              已上传: {m.matched_file_path.split("/").pop()?.replace(/^[^_]+_\d+\./, ".")}
             </p>
           )}
         </div>
       </div>
-      <div className="shrink-0">
+      <div className="shrink-0 flex flex-col items-end gap-1.5">
+        <Badge variant={m.status === "uploaded" ? "default" : m.status === "matched" ? "secondary" : "outline"} className="text-[10px]">
+          {m.status === "uploaded" ? "✅ 已上传" : m.status === "matched" ? "已匹配" : "⚠️ 待上传"}
+        </Badge>
         <label className="cursor-pointer">
           <input
             type="file"
@@ -372,7 +379,7 @@ export default function BiddingAssistant() {
               e.target.value = "";
             }}
           />
-          <Button variant="outline" size="sm" asChild disabled={uploadingMaterialId === m.id}>
+          <Button variant={m.status === "uploaded" ? "ghost" : "default"} size="sm" asChild disabled={uploadingMaterialId === m.id}>
             <span>
               {uploadingMaterialId === m.id ? (
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />

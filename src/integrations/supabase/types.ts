@@ -437,6 +437,7 @@ export type Database = {
           id: string
           matched_document_id: string | null
           matched_file_path: string | null
+          material_format: string | null
           material_name: string | null
           notes: string | null
           proposal_id: string
@@ -451,6 +452,7 @@ export type Database = {
           id?: string
           matched_document_id?: string | null
           matched_file_path?: string | null
+          material_format?: string | null
           material_name?: string | null
           notes?: string | null
           proposal_id: string
@@ -465,6 +467,7 @@ export type Database = {
           id?: string
           matched_document_id?: string | null
           matched_file_path?: string | null
+          material_format?: string | null
           material_name?: string | null
           notes?: string | null
           proposal_id?: string
