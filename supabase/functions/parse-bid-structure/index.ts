@@ -302,6 +302,7 @@ serve(async (req) => {
     }
 
     const data = await response.json();
+    const usage = data.usage || null;
     const toolCall = data.choices?.[0]?.message?.tool_calls?.[0];
 
     if (toolCall?.function?.arguments) {
@@ -312,7 +313,7 @@ serve(async (req) => {
         ai_status: "structure_ready",
       }).eq("id", analysisId);
 
-      return new Response(JSON.stringify({ success: true, structure: result }), {
+      return new Response(JSON.stringify({ success: true, structure: result, usage }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }

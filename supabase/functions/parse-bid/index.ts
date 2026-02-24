@@ -393,6 +393,7 @@ serve(async (req) => {
     }
 
     const data = await response.json();
+    const usage = data.usage || null;
     const toolCall = data.choices?.[0]?.message?.tool_calls?.[0];
 
     if (toolCall?.function?.arguments) {
@@ -418,7 +419,7 @@ serve(async (req) => {
 
       await supabase.from("bid_analyses").update(updateData).eq("id", analysisId);
 
-      return new Response(JSON.stringify({ success: true, result }), {
+      return new Response(JSON.stringify({ success: true, result, usage }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
