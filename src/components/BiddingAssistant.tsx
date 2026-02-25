@@ -16,8 +16,155 @@ import {
   ClipboardCheck, Trash2, Search, Sparkles, Download, Upload, Paperclip,
   ShieldCheck, AlertCircle, Clock, Image as ImageIcon,
 } from "lucide-react";
-import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType } from "docx";
+import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType, Header, Footer, LevelFormat, convertInchesToTwip } from "docx";
 import { saveAs } from "file-saver";
+import JSZip from "jszip";
+
+interface TemplateStyles {
+  body: { font?: string; size?: number; lineSpacing?: number };
+  heading1: { font?: string; size?: number; bold?: boolean };
+  heading2: { font?: string; size?: number; bold?: boolean };
+  heading3: { font?: string; size?: number; bold?: boolean };
+  heading4: { font?: string; size?: number; bold?: boolean };
+  title: { font?: string; size?: number; bold?: boolean };
+  pageMargin?: { top?: number; bottom?: number; left?: number; right?: number };
+}
+
+async function parseTemplateStyles(file: File): Promise<TemplateStyles> {
+  const zip = await JSZip.loadAsync(file);
+  const styles: TemplateStyles = {
+    body: {}, heading1: {}, heading2: {}, heading3: {}, heading4: {}, title: {},
+  };
+
+  // Parse styles.xml
+  const stylesXml = zip.file("word/styles.xml");
+  if (stylesXml) {
+    const xml = await stylesXml.async("text");
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(xml, "application/xml");
+    const ns = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+
+    // Extract default run properties
+    const docDefaults = doc.getElementsByTagNameNS(ns, "docDefaults")[0];
+    if (docDefaults) {
+      const rPrDefault = docDefaults.getElementsByTagNameNS(ns, "rPrDefault")[0];
+      if (rPrDefault) {
+        const rPr = rPrDefault.getElementsByTagNameNS(ns, "rPr")[0];
+        if (rPr) {
+          const sz = rPr.getElementsByTagNameNS(ns, "sz")[0];
+          if (sz) styles.body.size = parseInt(sz.getAttributeNS(ns, "val") || sz.getAttribute("w:val") || "0");
+          const rFonts = rPr.getElementsByTagNameNS(ns, "rFonts")[0];
+          if (rFonts) {
+            styles.body.font = rFonts.getAttributeNS(ns, "eastAsia") || rFonts.getAttribute("w:eastAsia")
+              || rFonts.getAttributeNS(ns, "ascii") || rFonts.getAttribute("w:ascii") || undefined;
+          }
+        }
+      }
+      const pPrDefault = docDefaults.getElementsByTagNameNS(ns, "pPrDefault")[0];
+      if (pPrDefault) {
+        const pPr = pPrDefault.getElementsByTagNameNS(ns, "pPr")[0];
+        if (pPr) {
+          const spacing = pPr.getElementsByTagNameNS(ns, "spacing")[0];
+          if (spacing) {
+            const lineVal = spacing.getAttributeNS(ns, "line") || spacing.getAttribute("w:line");
+            if (lineVal) styles.body.lineSpacing = parseInt(lineVal);
+          }
+        }
+      }
+    }
+
+    // Map style IDs to our structure
+    const styleMap: Record<string, keyof TemplateStyles> = {
+      "1": "heading1", "2": "heading2", "3": "heading3", "4": "heading4",
+    };
+    const styleEls = doc.getElementsByTagNameNS(ns, "style");
+    for (let i = 0; i < styleEls.length; i++) {
+      const el = styleEls[i];
+      const styleId = el.getAttributeNS(ns, "styleId") || el.getAttribute("w:styleId") || "";
+      const type = el.getAttributeNS(ns, "type") || el.getAttribute("w:type") || "";
+
+      let target: keyof TemplateStyles | null = null;
+      if (type === "paragraph") {
+        // Match heading styles by ID pattern
+        const headingMatch = styleId.match(/(?:heading|Heading|标题)\s*(\d)/i);
+        if (headingMatch) target = styleMap[headingMatch[1]] || null;
+        // Check name element for Chinese heading names
+        if (!target) {
+          const nameEl = el.getElementsByTagNameNS(ns, "name")[0];
+          const name = nameEl?.getAttributeNS(ns, "val") || nameEl?.getAttribute("w:val") || "";
+          const nameMatch = name.match(/heading\s*(\d)/i);
+          if (nameMatch) target = styleMap[nameMatch[1]] || null;
+          if (name.toLowerCase() === "title" || name === "标题") target = "title";
+        }
+        if (styleId.toLowerCase() === "title") target = "title";
+      }
+      if (type === "paragraph" && (styleId === "Normal" || styleId === "a" || styleId === "a0")) {
+        // Normal/body style
+        const rPr = el.getElementsByTagNameNS(ns, "rPr")[0];
+        if (rPr) {
+          const sz = rPr.getElementsByTagNameNS(ns, "sz")[0];
+          if (sz) styles.body.size = parseInt(sz.getAttributeNS(ns, "val") || sz.getAttribute("w:val") || "0");
+          const rFonts = rPr.getElementsByTagNameNS(ns, "rFonts")[0];
+          if (rFonts) {
+            const f = rFonts.getAttributeNS(ns, "eastAsia") || rFonts.getAttribute("w:eastAsia")
+              || rFonts.getAttributeNS(ns, "ascii") || rFonts.getAttribute("w:ascii");
+            if (f) styles.body.font = f;
+          }
+        }
+        const pPr = el.getElementsByTagNameNS(ns, "pPr")[0];
+        if (pPr) {
+          const spacing = pPr.getElementsByTagNameNS(ns, "spacing")[0];
+          if (spacing) {
+            const lineVal = spacing.getAttributeNS(ns, "line") || spacing.getAttribute("w:line");
+            if (lineVal) styles.body.lineSpacing = parseInt(lineVal);
+          }
+        }
+      }
+
+      if (target && target !== "body" && target !== "pageMargin") {
+        const tgt = styles[target] as { font?: string; size?: number; bold?: boolean };
+        const rPr = el.getElementsByTagNameNS(ns, "rPr")[0];
+        if (rPr) {
+          const sz = rPr.getElementsByTagNameNS(ns, "sz")[0];
+          if (sz) tgt.size = parseInt(sz.getAttributeNS(ns, "val") || sz.getAttribute("w:val") || "0");
+          const rFonts = rPr.getElementsByTagNameNS(ns, "rFonts")[0];
+          if (rFonts) {
+            tgt.font = rFonts.getAttributeNS(ns, "eastAsia") || rFonts.getAttribute("w:eastAsia")
+              || rFonts.getAttributeNS(ns, "ascii") || rFonts.getAttribute("w:ascii") || undefined;
+          }
+          const bold = rPr.getElementsByTagNameNS(ns, "b")[0];
+          if (bold) {
+            const bVal = bold.getAttributeNS(ns, "val") || bold.getAttribute("w:val");
+            tgt.bold = bVal !== "0" && bVal !== "false";
+          }
+        }
+      }
+    }
+  }
+
+  // Parse section properties from document.xml for page margins
+  const docXml = zip.file("word/document.xml");
+  if (docXml) {
+    const xml = await docXml.async("text");
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(xml, "application/xml");
+    const ns = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+    const sectPr = doc.getElementsByTagNameNS(ns, "sectPr");
+    if (sectPr.length > 0) {
+      const pgMar = sectPr[sectPr.length - 1].getElementsByTagNameNS(ns, "pgMar")[0];
+      if (pgMar) {
+        styles.pageMargin = {
+          top: parseInt(pgMar.getAttributeNS(ns, "top") || pgMar.getAttribute("w:top") || "0") || undefined,
+          bottom: parseInt(pgMar.getAttributeNS(ns, "bottom") || pgMar.getAttribute("w:bottom") || "0") || undefined,
+          left: parseInt(pgMar.getAttributeNS(ns, "left") || pgMar.getAttribute("w:left") || "0") || undefined,
+          right: parseInt(pgMar.getAttributeNS(ns, "right") || pgMar.getAttribute("w:right") || "0") || undefined,
+        };
+      }
+    }
+  }
+
+  return styles;
+}
 
 function flattenSections(sections: ProposalSection[], depth = 0): { section: ProposalSection; depth: number }[] {
   const result: { section: ProposalSection; depth: number }[] = [];
@@ -133,6 +280,7 @@ export default function BiddingAssistant() {
   const [templateFile, setTemplateFile] = useState<File | null>(null);
   const [templateUploading, setTemplateUploading] = useState(false);
   const [templatePath, setTemplatePath] = useState<string | null>(null);
+  const [templateStyles, setTemplateStyles] = useState<TemplateStyles | null>(null);
   const fetchAnalyses = useCallback(async () => {
     if (!user) return;
     const { data } = await supabase
@@ -420,21 +568,33 @@ export default function BiddingAssistant() {
     // Get format spec from AI output if available
     const formatSpec = parsedOutline?.format_spec || {};
     const projectTitle = selectedProposal.project_name || "投标文件";
+    const ts = templateStyles; // parsed template styles
 
-    // Determine font settings: AI-detected > defaults
-    const bodyFont = formatSpec.font_name || "仿宋";
-    const headingFont = formatSpec.font_name || "黑体";
-    const bodySize = parseInt(formatSpec.font_size_body) || 24; // 小四 = 24 half-points
-    const h1Size = parseInt(formatSpec.font_size_heading) || 36; // 小二 = 36
-    const h2Size = 28; // 三号
-    const h3Size = 26; // 小三
-    const lineSpacingVal = parseFloat(formatSpec.line_spacing) || 1.5;
-    const lineSpacing = Math.round(lineSpacingVal * 240);
+    // Priority: template styles > AI-detected > defaults
+    const bodyFont = ts?.body?.font || formatSpec.font_name || "仿宋";
+    const headingFont = ts?.heading1?.font || ts?.heading2?.font || formatSpec.font_name || "黑体";
+    const bodySize = ts?.body?.size || parseInt(formatSpec.font_size_body) || 24;
+    const titleSize = ts?.title?.size || parseInt(formatSpec.font_size_heading) || 44;
+    const h1Size = ts?.heading1?.size || parseInt(formatSpec.font_size_heading) || 36;
+    const h2Size = ts?.heading2?.size || 28;
+    const h3Size = ts?.heading3?.size || 26;
+    const h4Size = ts?.heading4?.size || bodySize;
+    const h1Font = ts?.heading1?.font || headingFont;
+    const h2Font = ts?.heading2?.font || headingFont;
+    const h3Font = ts?.heading3?.font || headingFont;
+    const titleFont = ts?.title?.font || headingFont;
+    // Line spacing: template value (in twips) > AI value (multiplier) > default 1.5x
+    const lineSpacing = ts?.body?.lineSpacing || Math.round((parseFloat(formatSpec.line_spacing) || 1.5) * 240);
+    // Page margins from template
+    const margins = ts?.pageMargin || {};
+    const pgTop = margins.top || 1440;
+    const pgBottom = margins.bottom || 1440;
+    const pgLeft = margins.left || 1440;
+    const pgRight = margins.right || 1440;
 
     const children: Paragraph[] = [
       new Paragraph({
-        text: projectTitle,
-        heading: HeadingLevel.TITLE,
+        children: [new TextRun({ text: projectTitle, font: titleFont, size: titleSize, bold: true })],
         alignment: AlignmentType.CENTER,
         spacing: { line: lineSpacing },
       }),
@@ -444,8 +604,7 @@ export default function BiddingAssistant() {
     if (parsedOutline?.overall_strategy) {
       children.push(
         new Paragraph({
-          text: "投标策略建议",
-          heading: HeadingLevel.HEADING_1,
+          children: [new TextRun({ text: "投标策略建议", font: h1Font, size: h1Size, bold: true })],
           spacing: { line: lineSpacing },
         }),
         new Paragraph({
@@ -457,17 +616,16 @@ export default function BiddingAssistant() {
     }
 
     children.push(new Paragraph({
-      text: "投标文件提纲",
-      heading: HeadingLevel.HEADING_1,
+      children: [new TextRun({ text: "投标文件提纲", font: h1Font, size: h1Size, bold: true })],
       spacing: { line: lineSpacing },
     }));
 
     for (const { section, depth } of flatSections) {
-      const heading = depth === 0 ? HeadingLevel.HEADING_2 : depth === 1 ? HeadingLevel.HEADING_3 : HeadingLevel.HEADING_4;
-      const fontSize = depth === 0 ? h2Size : depth === 1 ? h3Size : bodySize;
+      const fontSize = depth === 0 ? h2Size : depth === 1 ? h3Size : depth === 2 ? h4Size : bodySize;
+      const sectionFont = depth === 0 ? h2Font : depth === 1 ? h3Font : headingFont;
       const prefix = section.section_number ? `${section.section_number} ` : "";
       children.push(new Paragraph({
-        children: [new TextRun({ text: `${prefix}${section.title}`, font: headingFont, size: fontSize, bold: true })],
+        children: [new TextRun({ text: `${prefix}${section.title}`, font: sectionFont, size: fontSize, bold: true })],
         spacing: { line: lineSpacing },
       }));
       if (section.content) {
@@ -481,8 +639,7 @@ export default function BiddingAssistant() {
     if (parsedOutline?.personnel_plan?.length > 0) {
       children.push(new Paragraph({ text: "" }));
       children.push(new Paragraph({
-        text: "人员配置建议",
-        heading: HeadingLevel.HEADING_1,
+        children: [new TextRun({ text: "人员配置建议", font: h1Font, size: h1Size, bold: true })],
         spacing: { line: lineSpacing },
       }));
       for (const p of parsedOutline.personnel_plan) {
@@ -506,7 +663,7 @@ export default function BiddingAssistant() {
       sections: [{
         properties: {
           page: {
-            margin: { top: 1440, bottom: 1440, left: 1440, right: 1440 },
+            margin: { top: pgTop, bottom: pgBottom, left: pgLeft, right: pgRight },
           },
         },
         headers: formatSpec.page_header ? {
@@ -671,6 +828,12 @@ export default function BiddingAssistant() {
                         return;
                       }
                       setTemplateFile(file);
+                      // Parse template styles
+                      try {
+                        const parsed = await parseTemplateStyles(file);
+                        setTemplateStyles(parsed);
+                        console.log("Parsed template styles:", parsed);
+                      } catch (err) { console.warn("Failed to parse template styles:", err); }
                       // Upload to storage
                       if (user) {
                         setTemplateUploading(true);
@@ -680,7 +843,7 @@ export default function BiddingAssistant() {
                           const { error: upErr } = await supabase.storage.from("proposal-materials").upload(path, file);
                           if (upErr) throw upErr;
                           setTemplatePath(path);
-                          toast({ title: "模板上传成功", description: file.name });
+                          toast({ title: "模板上传成功", description: `已解析模板样式: ${file.name}` });
                         } catch (err: any) {
                           toast({ title: "模板上传失败", description: err.message, variant: "destructive" });
                           setTemplateFile(null);
@@ -705,7 +868,7 @@ export default function BiddingAssistant() {
                   <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
                     <FileText className="w-3.5 h-3.5" />
                     <span>{templateFile.name}</span>
-                    <button onClick={() => { setTemplateFile(null); setTemplatePath(null); }} className="text-destructive hover:text-destructive/80">
+                    <button onClick={() => { setTemplateFile(null); setTemplatePath(null); setTemplateStyles(null); }} className="text-destructive hover:text-destructive/80">
                       <XCircle className="w-3.5 h-3.5" />
                     </button>
                   </div>
@@ -833,6 +996,10 @@ export default function BiddingAssistant() {
                         const file = e.target.files?.[0];
                         if (!file || !file.name.endsWith(".docx")) { toast({ title: "仅支持.docx格式", variant: "destructive" }); return; }
                         setTemplateFile(file);
+                        try {
+                          const parsed = await parseTemplateStyles(file);
+                          setTemplateStyles(parsed);
+                        } catch (err) { console.warn("Failed to parse template styles:", err); }
                         if (user) {
                           setTemplateUploading(true);
                           try {
@@ -840,7 +1007,7 @@ export default function BiddingAssistant() {
                             const path = `${user.id}/templates/${Date.now()}_template.${ext}`;
                             await supabase.storage.from("proposal-materials").upload(path, file);
                             setTemplatePath(path);
-                            toast({ title: "模板已上传", description: file.name });
+                            toast({ title: "模板已上传", description: `已解析模板样式: ${file.name}` });
                           } catch (err: any) { toast({ title: "上传失败", description: err.message, variant: "destructive" }); setTemplateFile(null); }
                           finally { setTemplateUploading(false); }
                         }
