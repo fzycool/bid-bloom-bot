@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Progress } from "@/components/ui/progress";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
@@ -62,6 +63,7 @@ export default function KnowledgeBase() {
   const [documents, setDocuments] = useState<Document[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState({ current: 0, total: 0, fileName: "" });
   const [search, setSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState("全部");
 
@@ -87,8 +89,13 @@ export default function KnowledgeBase() {
     const files = e.target.files;
     if (!files || !user) return;
 
+    const fileList = Array.from(files);
     setUploading(true);
-    for (const file of Array.from(files)) {
+    setUploadProgress({ current: 0, total: fileList.length, fileName: "" });
+
+    for (let i = 0; i < fileList.length; i++) {
+      const file = fileList[i];
+      setUploadProgress({ current: i + 1, total: fileList.length, fileName: file.name });
       try {
         const fileExt = file.name.split('.').pop() || 'bin';
         const filePath = `${user.id}/${Date.now()}.${fileExt}`;
@@ -112,7 +119,6 @@ export default function KnowledgeBase() {
 
         if (insertError) throw insertError;
 
-        // Trigger AI classification
         supabase.functions.invoke("classify-document", {
           body: {
             documentId: docData.id,
@@ -120,7 +126,6 @@ export default function KnowledgeBase() {
             fileType: file.type || "unknown",
           },
         }).then(() => {
-          // Refresh after classification
           setTimeout(fetchDocuments, 1000);
         }).catch(console.error);
 
@@ -130,6 +135,7 @@ export default function KnowledgeBase() {
       }
     }
     setUploading(false);
+    setUploadProgress({ current: 0, total: 0, fileName: "" });
     fetchDocuments();
     e.target.value = "";
   };
@@ -198,6 +204,21 @@ export default function KnowledgeBase() {
           </Button>
         </div>
       </div>
+
+      {/* Upload Progress */}
+      {uploading && uploadProgress.total > 0 && (
+        <div className="space-y-2 p-4 rounded-lg bg-secondary/50 border border-border">
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-foreground font-medium truncate max-w-[60%]">
+              正在上传: {uploadProgress.fileName}
+            </span>
+            <span className="text-muted-foreground">
+              {uploadProgress.current} / {uploadProgress.total}
+            </span>
+          </div>
+          <Progress value={(uploadProgress.current / uploadProgress.total) * 100} className="h-2" />
+        </div>
+      )}
 
       {/* Search + Filters */}
       <div className="space-y-3">
