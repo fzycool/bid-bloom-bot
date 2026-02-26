@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -285,6 +285,7 @@ export default function BiddingAssistant() {
   const [generatingDoc, setGeneratingDoc] = useState(false);
   const [docStatus, setDocStatus] = useState<string>("pending");
   const [docProgress, setDocProgress] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState("outline");
   const fetchAnalyses = useCallback(async () => {
     if (!user) return;
     const { data } = await supabase
@@ -398,13 +399,17 @@ export default function BiddingAssistant() {
     return () => clearInterval(interval);
   }, [selectedProposal?.id, selectedProposal?.ai_status, fetchProposals, fetchProposalDetails]);
 
+  const lastSyncedProposalId = useRef<string | null>(null);
   useEffect(() => {
     if (selectedProposal) {
       fetchProposalDetails(selectedProposal.id);
       setCustomPrompt(selectedProposal.custom_prompt || "");
-      // Sync doc status from proposal
-      setDocStatus((selectedProposal as any).proposal_doc_status || "pending");
-      setDocProgress((selectedProposal as any).proposal_doc_progress || null);
+      if (lastSyncedProposalId.current !== selectedProposal.id) {
+        lastSyncedProposalId.current = selectedProposal.id;
+        setDocStatus((selectedProposal as any).proposal_doc_status || "pending");
+        setDocProgress((selectedProposal as any).proposal_doc_progress || null);
+        setActiveTab("outline");
+      }
     }
   }, [selectedProposal?.id, fetchProposalDetails]);
 
@@ -425,25 +430,24 @@ export default function BiddingAssistant() {
           clearInterval(interval);
           if (d.proposal_doc_status === "completed") {
             fetchProposalDetails(selectedProposal.id);
-            toast({ title: "投标方案生成完成", description: "可以下载查看完整方案" });
           }
         }
       }
     }, 3000);
     return () => clearInterval(interval);
-  }, [selectedProposal?.id, docStatus, fetchProposalDetails, toast]);
+  }, [selectedProposal?.id, docStatus, fetchProposalDetails]);
 
   const handleGenerateProposal = async () => {
     if (!selectedProposal) return;
     setGeneratingDoc(true);
+    setDocStatus("processing");
+    setDocProgress("正在准备数据...");
+    setActiveTab("proposal");
     try {
-      setDocStatus("processing");
-      setDocProgress("正在准备数据...");
       const { error } = await supabase.functions.invoke("generate-proposal", {
         body: { proposalId: selectedProposal.id },
       });
       if (error) throw error;
-      toast({ title: "开始生成投标方案", description: "AI正在逐章节撰写，请稍候..." });
     } catch (e: any) {
       toast({ title: "生成失败", description: e.message, variant: "destructive" });
       setDocStatus("failed");
@@ -1068,7 +1072,7 @@ export default function BiddingAssistant() {
               </div>
             </Card>
           ) : (
-            <Tabs defaultValue="outline" className="space-y-4">
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
               <TabsList>
                 <TabsTrigger value="outline"><FileText className="w-4 h-4 mr-1" />应答提纲</TabsTrigger>
                 <TabsTrigger value="proposal">
