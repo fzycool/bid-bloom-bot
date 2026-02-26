@@ -156,6 +156,38 @@ export type Database = {
           },
         ]
       }
+      bid_collaborators: {
+        Row: {
+          created_at: string
+          id: string
+          invited_by: string
+          proposal_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          invited_by: string
+          proposal_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          invited_by?: string
+          proposal_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bid_collaborators_proposal_id_fkey"
+            columns: ["proposal_id"]
+            isOneToOne: false
+            referencedRelation: "bid_proposals"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       bid_comparisons: {
         Row: {
           ai_status: string
@@ -755,6 +787,10 @@ export type Database = {
           _role: Database["public"]["Enums"]["app_role"]
           _user_id: string
         }
+        Returns: boolean
+      }
+      is_bid_member: {
+        Args: { _proposal_id: string; _user_id: string }
         Returns: boolean
       }
     }

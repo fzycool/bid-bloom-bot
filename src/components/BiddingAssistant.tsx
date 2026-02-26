@@ -14,7 +14,7 @@ import {
   Plus, FileText, CheckCircle, AlertTriangle, XCircle,
   RefreshCw, Users, ChevronRight, ChevronDown, Loader2,
   ClipboardCheck, Trash2, Search, Sparkles, Download, Upload, Paperclip,
-  ShieldCheck, AlertCircle, Clock, Image as ImageIcon,
+  ShieldCheck, AlertCircle, Clock, Image as ImageIcon, UserPlus, X,
 } from "lucide-react";
 import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType, Header, Footer, LevelFormat, convertInchesToTwip } from "docx";
 import { saveAs } from "file-saver";
@@ -194,6 +194,7 @@ interface BidAnalysis {
 
 interface Proposal {
   id: string;
+  user_id: string;
   project_name: string;
   status: string;
   ai_status: string;
@@ -286,6 +287,11 @@ export default function BiddingAssistant() {
   const [docStatus, setDocStatus] = useState<string>("pending");
   const [docProgress, setDocProgress] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("outline");
+  const [collaborators, setCollaborators] = useState<{ id: string; user_id: string; email?: string; full_name?: string }[]>([]);
+  const [platformUsers, setPlatformUsers] = useState<{ user_id: string; full_name: string | null; email?: string }[]>([]);
+  const [showCollabDialog, setShowCollabDialog] = useState(false);
+  const [collabSearch, setCollabSearch] = useState("");
+  const [addingCollab, setAddingCollab] = useState(false);
   const fetchAnalyses = useCallback(async () => {
     if (!user) return;
     const { data } = await supabase
@@ -299,13 +305,98 @@ export default function BiddingAssistant() {
 
   const fetchProposals = useCallback(async () => {
     if (!user) return;
-    const { data } = await supabase
+    // Fetch own proposals
+    const { data: own } = await supabase
       .from("bid_proposals")
       .select("*")
       .eq("user_id", user.id)
       .order("created_at", { ascending: false });
-    setProposals((data as any[]) || []);
+
+    // Fetch collaborated proposals
+    const { data: collabRows } = await supabase
+      .from("bid_collaborators")
+      .select("proposal_id")
+      .eq("user_id", user.id);
+
+    let collabProposals: any[] = [];
+    if (collabRows && collabRows.length > 0) {
+      const ids = collabRows.map((c: any) => c.proposal_id);
+      const { data } = await supabase
+        .from("bid_proposals")
+        .select("*")
+        .in("id", ids)
+        .order("created_at", { ascending: false });
+      collabProposals = (data as any[]) || [];
+    }
+
+    // Merge and deduplicate
+    const allMap = new Map<string, any>();
+    for (const p of [...(own || []), ...collabProposals]) {
+      if (!allMap.has(p.id)) allMap.set(p.id, p);
+    }
+    const all = Array.from(allMap.values()).sort((a: any, b: any) =>
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    );
+    setProposals(all);
   }, [user]);
+
+  const fetchCollaborators = useCallback(async (proposalId: string) => {
+    const { data: collabs } = await supabase
+      .from("bid_collaborators")
+      .select("id, user_id")
+      .eq("proposal_id", proposalId);
+    if (!collabs || collabs.length === 0) { setCollaborators([]); return; }
+
+    // Fetch profile info for collaborators
+    const userIds = collabs.map((c: any) => c.user_id);
+    const { data: profiles } = await supabase
+      .from("profiles")
+      .select("user_id, full_name")
+      .in("user_id", userIds);
+
+    const profileMap = new Map((profiles || []).map((p: any) => [p.user_id, p]));
+    setCollaborators(collabs.map((c: any) => ({
+      id: c.id,
+      user_id: c.user_id,
+      full_name: profileMap.get(c.user_id)?.full_name || "未知用户",
+    })));
+  }, []);
+
+  const fetchPlatformUsers = useCallback(async () => {
+    if (!user) return;
+    const { data } = await supabase
+      .from("profiles")
+      .select("user_id, full_name")
+      .eq("is_approved", true)
+      .neq("user_id", user.id);
+    setPlatformUsers((data as any[]) || []);
+  }, [user]);
+
+  const handleAddCollaborator = async (targetUserId: string) => {
+    if (!user || !selectedProposal) return;
+    setAddingCollab(true);
+    try {
+      const { error } = await supabase.from("bid_collaborators").insert({
+        proposal_id: selectedProposal.id,
+        user_id: targetUserId,
+        invited_by: user.id,
+      } as any);
+      if (error) throw error;
+      toast({ title: "添加成功", description: "已添加协作者" });
+      fetchCollaborators(selectedProposal.id);
+    } catch (e: any) {
+      toast({ title: "添加失败", description: e.message, variant: "destructive" });
+    } finally {
+      setAddingCollab(false);
+    }
+  };
+
+  const handleRemoveCollaborator = async (collabId: string) => {
+    if (!selectedProposal) return;
+    await supabase.from("bid_collaborators").delete().eq("id", collabId);
+    toast({ title: "已移除协作者" });
+    fetchCollaborators(selectedProposal.id);
+  };
 
   const fetchCompanyMaterials = useCallback(async () => {
     if (!user) return [];
@@ -403,6 +494,7 @@ export default function BiddingAssistant() {
   useEffect(() => {
     if (selectedProposal) {
       fetchProposalDetails(selectedProposal.id);
+      fetchCollaborators(selectedProposal.id);
       setCustomPrompt(selectedProposal.custom_prompt || "");
       if (lastSyncedProposalId.current !== selectedProposal.id) {
         lastSyncedProposalId.current = selectedProposal.id;
@@ -950,7 +1042,7 @@ export default function BiddingAssistant() {
     return (
       <div className="space-y-6">
         <div className="flex items-center gap-3">
-          <Button variant="ghost" size="sm" onClick={() => { setSelectedProposal(null); setSections([]); setMaterials([]); }}>
+          <Button variant="ghost" size="sm" onClick={() => { setSelectedProposal(null); setSections([]); setMaterials([]); setShowCollabDialog(false); }}>
             ← 返回列表
           </Button>
           <div className="flex-1">
@@ -960,12 +1052,106 @@ export default function BiddingAssistant() {
                 {selectedProposal.ai_status === "completed" ? "提纲已完成" : selectedProposal.ai_status === "processing" ? "生成中" : selectedProposal.ai_status === "failed" ? "失败" : "待处理"}
               </Badge>
               <span className="text-xs text-muted-foreground">{new Date(selectedProposal.created_at).toLocaleDateString()}</span>
+              {selectedProposal.user_id !== user?.id && (
+                <Badge variant="secondary" className="text-xs">协作</Badge>
+              )}
             </div>
           </div>
-          <Button variant="outline" size="sm" onClick={() => handleDelete(selectedProposal.id)}>
-            <Trash2 className="w-4 h-4 mr-1" /> 删除
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => { setShowCollabDialog(!showCollabDialog); if (!showCollabDialog) fetchPlatformUsers(); }}>
+              <UserPlus className="w-4 h-4 mr-1" /> 协作者 {collaborators.length > 0 && `(${collaborators.length})`}
+            </Button>
+            {selectedProposal.user_id === user?.id && (
+              <Button variant="outline" size="sm" onClick={() => handleDelete(selectedProposal.id)}>
+                <Trash2 className="w-4 h-4 mr-1" /> 删除
+              </Button>
+            )}
+          </div>
         </div>
+
+        {/* Collaborator panel */}
+        {showCollabDialog && (
+          <Card>
+            <CardContent className="pt-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-medium text-foreground">协作者管理</p>
+                <Button variant="ghost" size="sm" onClick={() => setShowCollabDialog(false)}>
+                  <X className="w-4 h-4" />
+                </Button>
+              </div>
+
+              {/* Current collaborators */}
+              {collaborators.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-xs text-muted-foreground">当前协作者</p>
+                  {collaborators.map((c) => (
+                    <div key={c.id} className="flex items-center justify-between px-3 py-2 rounded-lg bg-secondary/50">
+                      <div className="flex items-center gap-2">
+                        <Users className="w-4 h-4 text-muted-foreground" />
+                        <span className="text-sm text-foreground">{c.full_name || "未知用户"}</span>
+                      </div>
+                      {selectedProposal.user_id === user?.id && (
+                        <Button variant="ghost" size="sm" onClick={() => handleRemoveCollaborator(c.id)} className="text-destructive hover:text-destructive h-7 px-2">
+                          <X className="w-3.5 h-3.5" />
+                        </Button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Add collaborator */}
+              {selectedProposal.user_id === user?.id && (
+                <div className="space-y-2">
+                  <p className="text-xs text-muted-foreground">添加协作者</p>
+                  <Input
+                    placeholder="搜索用户姓名..."
+                    value={collabSearch}
+                    onChange={(e) => setCollabSearch(e.target.value)}
+                    className="h-8 text-sm"
+                  />
+                  <ScrollArea className="max-h-[200px]">
+                    <div className="space-y-1">
+                      {platformUsers
+                        .filter((u) => {
+                          const alreadyAdded = collaborators.some((c) => c.user_id === u.user_id);
+                          const isOwner = u.user_id === selectedProposal.user_id;
+                          const matchesSearch = !collabSearch || (u.full_name || "").toLowerCase().includes(collabSearch.toLowerCase());
+                          return !alreadyAdded && !isOwner && matchesSearch;
+                        })
+                        .map((u) => (
+                          <div key={u.user_id} className="flex items-center justify-between px-3 py-2 rounded-lg hover:bg-secondary/50">
+                            <span className="text-sm text-foreground">{u.full_name || "未命名用户"}</span>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-7 px-2 text-xs"
+                              disabled={addingCollab}
+                              onClick={() => handleAddCollaborator(u.user_id)}
+                            >
+                              {addingCollab ? <Loader2 className="w-3 h-3 animate-spin" /> : <><Plus className="w-3 h-3 mr-1" />添加</>}
+                            </Button>
+                          </div>
+                        ))}
+                      {platformUsers.filter((u) => {
+                        const alreadyAdded = collaborators.some((c) => c.user_id === u.user_id);
+                        const isOwner = u.user_id === selectedProposal.user_id;
+                        const matchesSearch = !collabSearch || (u.full_name || "").toLowerCase().includes(collabSearch.toLowerCase());
+                        return !alreadyAdded && !isOwner && matchesSearch;
+                      }).length === 0 && (
+                        <p className="text-xs text-muted-foreground text-center py-4">无可添加的用户</p>
+                      )}
+                    </div>
+                  </ScrollArea>
+                </div>
+              )}
+
+              {collaborators.length === 0 && selectedProposal.user_id !== user?.id && (
+                <p className="text-xs text-muted-foreground text-center py-4">暂无其他协作者</p>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
         {selectedProposal.ai_status === "processing" ? (
             <Card className="flex items-center justify-center py-20">
