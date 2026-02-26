@@ -89,6 +89,92 @@ serve(async (req) => {
       });
     }
 
+    // ---- ACTION: rewrite ----
+    if (action === "rewrite") {
+      const { proposalId, message, context, highlightedText, sectionId } = params;
+
+      const { data: modelConfig } = await supabase.from("model_config").select("*").eq("is_active", true).maybeSingle();
+      const rewriteUrl = modelConfig?.base_url || aiUrl;
+      const rewriteModel = modelConfig?.model_name || aiModel;
+      const rewriteKey = modelConfig?.api_key || aiKey;
+
+      const systemPrompt = `你是资深投标文件撰写专家。用户选中了标书中的一段内容，并给出了修改要求。请根据要求重写这段内容。
+
+要求：
+1. 只输出重写后的文本内容，不要包含任何解释、前缀或JSON格式
+2. 保持专业严谨的投标文件语言风格
+3. 保留原文中的来源标注格式（如【来源：知识库 - xxx】或【来源：AI智能生成】）
+4. 如果原文没有来源标注，在末尾添加【来源：AI智能生成】
+5. 确保重写内容在上下文中连贯自然`;
+
+      const userPrompt = `${context}\n\n【选中的原文】\n${highlightedText}\n\n【修改要求】\n${message}`;
+
+      const response = await fetch(rewriteUrl, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${rewriteKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: rewriteModel,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt },
+          ],
+          max_tokens: 4096,
+        }),
+      });
+
+      if (!response.ok) throw new Error(`AI错误: ${response.status}`);
+      const data = await response.json();
+      const newContent = data.choices?.[0]?.message?.content?.trim() || "";
+
+      if (newContent && sectionId) {
+        // Update the section in DB
+        const { data: section } = await supabase.from("proposal_sections").select("content").eq("id", sectionId).single();
+        if (section) {
+          const updatedContent = (section.content || "").replace(highlightedText, newContent);
+          await supabase.from("proposal_sections").update({ content: updatedContent }).eq("id", sectionId);
+        }
+      }
+
+      return new Response(JSON.stringify({
+        success: true,
+        reply: `✅ 已重写内容：\n\n${newContent}`,
+        newContent,
+      }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // ---- ACTION: chat ----
+    if (action === "chat") {
+      const { proposalId, message, context } = params;
+
+      const { data: modelConfig } = await supabase.from("model_config").select("*").eq("is_active", true).maybeSingle();
+      const chatUrl = modelConfig?.base_url || aiUrl;
+      const chatModel = modelConfig?.model_name || aiModel;
+      const chatKey = modelConfig?.api_key || aiKey;
+
+      const response = await fetch(chatUrl, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${chatKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: chatModel,
+          messages: [
+            { role: "system", content: "你是资深投标专家助手。请根据上下文回答用户关于标书内容的问题，提供专业建议。" },
+            { role: "user", content: `${context}\n\n用户问题: ${message}` },
+          ],
+          max_tokens: 4096,
+        }),
+      });
+
+      if (!response.ok) throw new Error(`AI错误: ${response.status}`);
+      const data = await response.json();
+      const reply = data.choices?.[0]?.message?.content?.trim() || "抱歉，暂时无法回复";
+
+      return new Response(JSON.stringify({ success: true, reply }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     throw new Error(`Unknown action: ${action}`);
   } catch (e) {
     console.error("bidding-assistant error:", e);
