@@ -23,12 +23,9 @@ serve(async (req) => {
     const aiUrl = modelConfig?.base_url || "https://ai.gateway.lovable.dev/v1/chat/completions";
     const aiModel = modelConfig?.model_name || "openai/gpt-5.2";
     const aiKey = modelConfig?.api_key || LOVABLE_API_KEY;
-    const isLovable = !modelConfig || modelConfig.provider === "lovable";
-    const configMaxTokens = modelConfig?.max_tokens || (isLovable ? 32000 : 8192);
 
-    const { proposalId, filePath, fileType, auditType = "full" } = await req.json();
+    const { proposalId, filePath, fileType, auditType = "full", useGeneratedContent } = await req.json();
     if (!proposalId) throw new Error("proposalId is required");
-    if (!filePath) throw new Error("请上传终版标书文件");
 
     // Fetch proposal + bid analysis
     const { data: proposal } = await supabase
@@ -58,12 +55,6 @@ serve(async (req) => {
       outlineData = proposal.outline_content ? JSON.parse(proposal.outline_content) : null;
     } catch { /* ignore */ }
 
-    // Download the uploaded bid document
-    const { data: fileData, error: dlError } = await supabase.storage
-      .from("knowledge-base")
-      .download(filePath);
-    if (dlError || !fileData) throw new Error(`文件下载失败: ${dlError?.message || "unknown"}`);
-
     // Create audit report record
     const { data: report, error: insertErr } = await supabase
       .from("audit_reports")
@@ -72,7 +63,7 @@ serve(async (req) => {
         user_id: proposal.user_id,
         ai_status: "processing",
         audit_type: auditType,
-        file_path: filePath,
+        file_path: filePath || null,
       })
       .select("id")
       .single();
@@ -81,7 +72,7 @@ serve(async (req) => {
     const systemPrompt = `你是资深投标评审专家，以甲方评委的严苛视角对投标文件进行全面审查。
 
 你将收到：
-1. 终版投标文件（完整标书）
+1. 终版投标文件（完整标书内容）
 2. 招标文件的解析数据（评分标准、废标条件等）
 3. 投标提纲和证明材料清单
 4. 人员和简历信息
@@ -159,46 +150,66 @@ ${(resumes || []).map((r: any) => `- 员工ID:${r.employee_id}, 版本:${r.versi
 
 【招标摘要】${bid?.summary || "无"}`;
 
-    // Build messages - send PDF as multimodal, others as text
+    // Build messages
     const messages: any[] = [{ role: "system", content: systemPrompt }];
-    const isPdf = filePath.endsWith(".pdf") || fileType?.includes("pdf");
 
-    if (isPdf) {
-      const arrayBuffer = await fileData.arrayBuffer();
-      const uint8Array = new Uint8Array(arrayBuffer);
-      const b64 = base64Encode(uint8Array);
+    if (filePath) {
+      // User uploaded a file - download and send
+      const { data: fileData, error: dlError } = await supabase.storage
+        .from("knowledge-base")
+        .download(filePath);
+      if (dlError || !fileData) throw new Error(`文件下载失败: ${dlError?.message || "unknown"}`);
 
-      messages.push({
-        role: "user",
-        content: [
-          {
-            type: "file",
-            file: {
-              filename: filePath.split("/").pop() || "bid-document.pdf",
-              file_data: `data:application/pdf;base64,${b64}`,
+      const isPdf = filePath.endsWith(".pdf") || fileType?.includes("pdf");
+
+      if (isPdf) {
+        const arrayBuffer = await fileData.arrayBuffer();
+        const uint8Array = new Uint8Array(arrayBuffer);
+        const b64 = base64Encode(uint8Array);
+
+        messages.push({
+          role: "user",
+          content: [
+            {
+              type: "file",
+              file: {
+                filename: filePath.split("/").pop() || "bid-document.pdf",
+                file_data: `data:application/pdf;base64,${b64}`,
+              },
             },
-          },
-          {
-            type: "text",
-            text: `以上是终版投标文件，请结合以下招标要求和辅助数据进行全面审查：\n\n${contextText}`,
-          },
-        ],
-      });
+            {
+              type: "text",
+              text: `以上是终版投标文件，请结合以下招标要求和辅助数据进行全面审查：\n\n${contextText}`,
+            },
+          ],
+        });
+      } else {
+        const textContent = await fileData.text();
+        messages.push({
+          role: "user",
+          content: `以下是终版投标文件内容：\n\n${textContent}\n\n---\n\n请结合以下招标要求和辅助数据进行全面审查：\n\n${contextText}`,
+        });
+      }
     } else {
-      const textContent = await fileData.text();
+      // Use generated content from proposal_sections
+      const sectionContent = (sections || [])
+        .map((s: any) => {
+          const num = s.section_number ? `${s.section_number} ` : "";
+          const body = s.content || "(无内容)";
+          return `### ${num}${s.title}\n${body}`;
+        })
+        .join("\n\n");
+
       messages.push({
         role: "user",
-        content: `以下是终版投标文件内容：\n\n${textContent}\n\n---\n\n请结合以下招标要求和辅助数据进行全面审查：\n\n${contextText}`,
+        content: `以下是平台生成的终版投标文件内容（各章节正文）：\n\n${sectionContent}\n\n---\n\n请结合以下招标要求和辅助数据进行全面审查：\n\n${contextText}`,
       });
     }
 
     const response = await fetch(aiUrl, {
       method: "POST",
       headers: { Authorization: `Bearer ${aiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: aiModel,
-        messages,
-      }),
+      body: JSON.stringify({ model: aiModel, messages }),
     });
 
     if (!response.ok) {

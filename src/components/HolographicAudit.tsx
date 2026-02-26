@@ -11,13 +11,15 @@ import { useToast } from "@/hooks/use-toast";
 import {
   CheckCircle, AlertTriangle, XCircle, Loader2,
   Shield, Eye, GitBranch, BookOpen, Trash2, Sparkles, Info,
-  Upload, FileText,
+  Upload, FileText, ChevronDown, ChevronUp, Users, ListChecks, Target, AlertOctagon,
 } from "lucide-react";
 
 interface Proposal {
   id: string;
   project_name: string;
   ai_status: string;
+  proposal_doc_status: string;
+  bid_analysis_id: string | null;
   created_at: string;
 }
 
@@ -40,6 +42,13 @@ interface AuditReport {
   score: number | null;
   file_path: string | null;
   created_at: string;
+}
+
+interface BidAnalysisPreview {
+  disqualification_items: any[];
+  trap_items: any[];
+  personnel_requirements: any[];
+  scoring_table: any[];
 }
 
 const categoryConfig = {
@@ -68,11 +77,16 @@ export default function HolographicAudit() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
 
+  // Bid analysis preview
+  const [bidPreview, setBidPreview] = useState<BidAnalysisPreview | null>(null);
+  const [showBidPreview, setShowBidPreview] = useState(true);
+  const [sectionCount, setSectionCount] = useState(0);
+
   const fetchProposals = useCallback(async () => {
     if (!user) return;
     const { data } = await supabase
       .from("bid_proposals")
-      .select("id, project_name, ai_status, created_at")
+      .select("id, project_name, ai_status, proposal_doc_status, bid_analysis_id, created_at")
       .eq("user_id", user.id)
       .eq("ai_status", "completed")
       .order("created_at", { ascending: false });
@@ -94,6 +108,46 @@ export default function HolographicAudit() {
     fetchReports();
   }, [fetchProposals, fetchReports]);
 
+  // When proposal selected, load bid analysis preview & section count
+  useEffect(() => {
+    if (!selectedProposalId) {
+      setBidPreview(null);
+      setSectionCount(0);
+      return;
+    }
+    const proposal = proposals.find(p => p.id === selectedProposalId);
+    
+    // Load section count
+    supabase
+      .from("proposal_sections")
+      .select("id", { count: "exact", head: true })
+      .eq("proposal_id", selectedProposalId)
+      .then(({ count }) => setSectionCount(count || 0));
+
+    // Load bid analysis
+    if (proposal?.bid_analysis_id) {
+      supabase
+        .from("bid_analyses")
+        .select("disqualification_items, trap_items, personnel_requirements, scoring_table")
+        .eq("id", proposal.bid_analysis_id)
+        .single()
+        .then(({ data }) => {
+          if (data) {
+            setBidPreview({
+              disqualification_items: (data.disqualification_items as any[]) || [],
+              trap_items: (data.trap_items as any[]) || [],
+              personnel_requirements: (data.personnel_requirements as any[]) || [],
+              scoring_table: (data.scoring_table as any[]) || [],
+            });
+          } else {
+            setBidPreview(null);
+          }
+        });
+    } else {
+      setBidPreview(null);
+    }
+  }, [selectedProposalId, proposals]);
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -114,28 +168,39 @@ export default function HolographicAudit() {
   };
 
   const handleRun = async () => {
-    if (!selectedProposalId || !selectedFile) return;
+    if (!selectedProposalId) return;
+    // Must have either uploaded file or generated sections
+    if (!selectedFile && sectionCount === 0) {
+      toast({ title: "该方案尚无生成的标书内容，请上传标书文件", variant: "destructive" });
+      return;
+    }
+
     setRunning(true);
     setUploading(true);
     try {
-      // Upload file to storage
-      const timestamp = Date.now();
-      const safeName = `${timestamp}_${selectedFile.name.replace(/[^a-zA-Z0-9._\u4e00-\u9fff-]/g, "_")}`;
-      const storagePath = `${user!.id}/audit/${safeName}`;
+      let storagePath: string | null = null;
+      let fileType: string | null = null;
 
-      const { error: uploadErr } = await supabase.storage
-        .from("knowledge-base")
-        .upload(storagePath, selectedFile);
-      if (uploadErr) throw new Error(`文件上传失败: ${uploadErr.message}`);
+      // If user uploaded a file, upload it
+      if (selectedFile) {
+        const timestamp = Date.now();
+        const safeName = `${timestamp}_${selectedFile.name.replace(/[^a-zA-Z0-9._\u4e00-\u9fff-]/g, "_")}`;
+        storagePath = `${user!.id}/audit/${safeName}`;
+
+        const { error: uploadErr } = await supabase.storage
+          .from("knowledge-base")
+          .upload(storagePath, selectedFile);
+        if (uploadErr) throw new Error(`文件上传失败: ${uploadErr.message}`);
+        fileType = selectedFile.type;
+      }
 
       setUploading(false);
 
-      // Call audit function with file path
+      // Call audit function - filePath is optional now
       const { data, error } = await supabase.functions.invoke("holographic-audit", {
         body: {
           proposalId: selectedProposalId,
-          filePath: storagePath,
-          fileType: selectedFile.type,
+          ...(storagePath ? { filePath: storagePath, fileType } : { useGeneratedContent: true }),
         },
       });
       if (error) throw error;
@@ -180,12 +245,15 @@ export default function HolographicAudit() {
     return "text-destructive";
   };
 
+  const selectedProposal = proposals.find(p => p.id === selectedProposalId);
+  const hasGeneratedDoc = selectedProposal?.proposal_doc_status === "completed" || sectionCount > 0;
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-bold text-foreground">全息检查与逻辑自证</h2>
-          <p className="text-sm text-muted-foreground mt-1">上传终版标书，模拟评委视角进行逐条审查</p>
+          <p className="text-sm text-muted-foreground mt-1">选择已生成的标书或上传手工标书，模拟评委视角逐条审查</p>
         </div>
       </div>
 
@@ -194,52 +262,141 @@ export default function HolographicAudit() {
         <CardHeader className="pb-2">
           <CardTitle className="text-sm">发起审查</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="flex flex-col sm:flex-row gap-3">
+        <CardContent className="space-y-4">
+          {/* Step 1: Select proposal */}
+          <div>
+            <p className="text-xs text-muted-foreground mb-1.5">① 选择投标方案</p>
             <Select value={selectedProposalId} onValueChange={setSelectedProposalId}>
-              <SelectTrigger className="flex-1">
+              <SelectTrigger>
                 <SelectValue placeholder="选择关联的投标方案" />
               </SelectTrigger>
               <SelectContent>
                 {proposals.map((p) => (
-                  <SelectItem key={p.id} value={p.id}>{p.project_name}</SelectItem>
+                  <SelectItem key={p.id} value={p.id}>
+                    <div className="flex items-center gap-2">
+                      <span>{p.project_name}</span>
+                      {(p.proposal_doc_status === "completed") && (
+                        <Badge variant="secondary" className="text-[10px] px-1.5 py-0">已生成标书</Badge>
+                      )}
+                    </div>
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
 
-          {/* File upload */}
-          <div
-            className="border-2 border-dashed border-border rounded-lg p-4 text-center cursor-pointer hover:border-accent transition-colors"
-            onClick={() => fileInputRef.current?.click()}
-          >
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".pdf,.doc,.docx"
-              className="hidden"
-              onChange={handleFileChange}
-            />
-            {selectedFile ? (
-              <div className="flex items-center justify-center gap-2">
-                <FileText className="w-5 h-5 text-accent" />
-                <span className="text-sm font-medium text-foreground">{selectedFile.name}</span>
-                <span className="text-xs text-muted-foreground">
-                  ({(selectedFile.size / 1024 / 1024).toFixed(1)}MB)
-                </span>
+          {/* Auto-loaded info */}
+          {selectedProposalId && (
+            <div className="space-y-3">
+              {/* Generated doc info */}
+              <div className="flex items-center gap-2 p-3 rounded-lg bg-secondary/50 border border-border">
+                <FileText className="w-4 h-4 text-accent shrink-0" />
+                <div className="flex-1 min-w-0">
+                  {hasGeneratedDoc ? (
+                    <p className="text-sm text-foreground">
+                      ✅ 已加载平台生成的标书（{sectionCount} 个章节）
+                    </p>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">
+                      ⚠️ 该方案尚未生成标书，请上传手工标书文件
+                    </p>
+                  )}
+                </div>
               </div>
-            ) : (
+
+              {/* Bid analysis preview */}
+              {bidPreview && (
+                <div className="border border-border rounded-lg overflow-hidden">
+                  <button
+                    onClick={() => setShowBidPreview(!showBidPreview)}
+                    className="w-full flex items-center justify-between px-3 py-2 bg-secondary/30 hover:bg-secondary/50 transition-colors text-sm font-medium text-foreground"
+                  >
+                    <span>📋 已加载招标解析数据</span>
+                    {showBidPreview ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                  </button>
+                  {showBidPreview && (
+                    <div className="p-3 grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      <div className="flex items-center gap-2 p-2 rounded bg-destructive/5 border border-destructive/20">
+                        <AlertOctagon className="w-4 h-4 text-destructive shrink-0" />
+                        <div>
+                          <p className="text-xs text-muted-foreground">废标红线</p>
+                          <p className="text-sm font-bold text-foreground">{bidPreview.disqualification_items.length} 条</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 p-2 rounded bg-yellow-500/5 border border-yellow-500/20">
+                        <Target className="w-4 h-4 text-yellow-500 shrink-0" />
+                        <div>
+                          <p className="text-xs text-muted-foreground">陷阱项</p>
+                          <p className="text-sm font-bold text-foreground">{bidPreview.trap_items.length} 条</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 p-2 rounded bg-blue-500/5 border border-blue-500/20">
+                        <Users className="w-4 h-4 text-blue-500 shrink-0" />
+                        <div>
+                          <p className="text-xs text-muted-foreground">人员要求</p>
+                          <p className="text-sm font-bold text-foreground">{bidPreview.personnel_requirements.length} 条</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 p-2 rounded bg-purple-500/5 border border-purple-500/20">
+                        <ListChecks className="w-4 h-4 text-purple-500 shrink-0" />
+                        <div>
+                          <p className="text-xs text-muted-foreground">评分标准</p>
+                          <p className="text-sm font-bold text-foreground">{bidPreview.scoring_table.length} 条</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Optional file upload */}
               <div>
-                <Upload className="w-8 h-8 mx-auto mb-2 text-muted-foreground" />
-                <p className="text-sm text-muted-foreground">点击上传终版投标文件</p>
-                <p className="text-xs text-muted-foreground mt-1">支持 PDF、DOC、DOCX，最大 20MB</p>
+                <p className="text-xs text-muted-foreground mb-1.5">
+                  ② 上传手工标书（可选，{hasGeneratedDoc ? "如不上传则使用平台生成的标书" : "当前方案无生成标书，需要上传"}）
+                </p>
+                <div
+                  className="border-2 border-dashed border-border rounded-lg p-3 text-center cursor-pointer hover:border-accent transition-colors"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".pdf,.doc,.docx"
+                    className="hidden"
+                    onChange={handleFileChange}
+                  />
+                  {selectedFile ? (
+                    <div className="flex items-center justify-center gap-2">
+                      <FileText className="w-4 h-4 text-accent" />
+                      <span className="text-sm font-medium text-foreground">{selectedFile.name}</span>
+                      <span className="text-xs text-muted-foreground">
+                        ({(selectedFile.size / 1024 / 1024).toFixed(1)}MB)
+                      </span>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedFile(null);
+                          if (fileInputRef.current) fileInputRef.current.value = "";
+                        }}
+                        className="text-muted-foreground hover:text-destructive ml-1"
+                      >
+                        <XCircle className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-center gap-2 py-1">
+                      <Upload className="w-4 h-4 text-muted-foreground" />
+                      <p className="text-sm text-muted-foreground">点击上传手工标书（PDF/DOC/DOCX，最大20MB）</p>
+                    </div>
+                  )}
+                </div>
               </div>
-            )}
-          </div>
+            </div>
+          )}
 
           <Button
             onClick={handleRun}
-            disabled={!selectedProposalId || !selectedFile || running}
+            disabled={!selectedProposalId || (!selectedFile && !hasGeneratedDoc) || running}
             className="w-full sm:w-auto"
           >
             {running ? (
@@ -312,7 +469,7 @@ export default function HolographicAudit() {
             <Card className="flex items-center justify-center py-20">
               <div className="text-center text-muted-foreground">
                 <Shield className="w-10 h-10 mx-auto mb-3 opacity-40" />
-                <p className="text-sm">上传终版标书开始全息审查</p>
+                <p className="text-sm">选择方案并开始全息审查</p>
               </div>
             </Card>
           ) : selectedReport.ai_status === "processing" ? (
@@ -332,10 +489,7 @@ export default function HolographicAudit() {
                     <p className={`text-3xl font-bold ${scoreColor(selectedReport.score)}`}>
                       {selectedReport.score ?? "-"}
                     </p>
-                    <Progress
-                      value={selectedReport.score ?? 0}
-                      className="mt-2 h-1.5"
-                    />
+                    <Progress value={selectedReport.score ?? 0} className="mt-2 h-1.5" />
                   </CardContent>
                 </Card>
                 <Card>
