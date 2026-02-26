@@ -330,7 +330,18 @@ export default function BiddingAssistant() {
   const [creating, setCreating] = useState(false);
   const [selectedBidId, setSelectedBidId] = useState("");
   const [projectName, setProjectName] = useState("");
-  const [customPrompt, setCustomPrompt] = useState("");
+  const defaultOutlinePrompt = `提纲的获取来源：
+1. 投标人须知——投标文件构成；
+2. 投标人须知前附表/前附表——投标文件构成/组成/投标文件应包括但不限于；
+3. 投标文件格式；
+4. 资格要求；
+5. 评分标准/评分表
+
+要求：
+a) 顺序：有明确要求的按要求执行，没有明确要求的按结构清晰的执行；
+b) 内容：结构需包含来源的所有内容；如投标文件格式有对应内容，需匹配到文档中；
+c) 字体：有明确要求的按要求执行，没有明确要求按文档模板执行，文档标题及页眉需匹配项目名称；`;
+  const [customPrompt, setCustomPrompt] = useState(defaultOutlinePrompt);
   const [generating, setGenerating] = useState(false);
   const [checking, setChecking] = useState(false);
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
@@ -1767,7 +1778,7 @@ export default function BiddingAssistant() {
             </div>
             <div>
               <label className="text-sm font-medium text-foreground">自定义提纲生成要求</label>
-              <Textarea className="mt-1" rows={3} value={customPrompt} onChange={(e) => setCustomPrompt(e.target.value)} placeholder="可选。例如：重点关注技术方案部分，细化实施计划章节..." />
+              <Textarea className="mt-1" rows={8} value={customPrompt} onChange={(e) => setCustomPrompt(e.target.value)} placeholder="提纲生成的自定义要求..." />
             </div>
             <div>
               <label className="text-sm font-medium text-foreground">Word模板（可选）</label>
