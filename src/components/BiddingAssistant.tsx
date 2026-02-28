@@ -16,7 +16,12 @@ import {
   ClipboardCheck, Trash2, Search, Sparkles, Download, Upload, Paperclip,
   ShieldCheck, AlertCircle, Clock, Image as ImageIcon, UserPlus, X,
   Send, MessageSquare, PanelLeftClose, PanelRightClose,
+  Pencil, MoreVertical, ChevronUp, FolderPlus,
 } from "lucide-react";
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem,
+  DropdownMenuSeparator, DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType, Header, Footer, LevelFormat, convertInchesToTwip, LevelSuffix } from "docx";
 import { saveAs } from "file-saver";
@@ -376,6 +381,11 @@ c) 字体：有明确要求的按要求执行，没有明确要求按文档模�
   const [showCollabDialog, setShowCollabDialog] = useState(false);
   const [collabSearch, setCollabSearch] = useState("");
   const [addingCollab, setAddingCollab] = useState(false);
+  const [outlineEditId, setOutlineEditId] = useState<string | null>(null);
+  const [outlineEditTitle, setOutlineEditTitle] = useState("");
+  const [outlineAddParentId, setOutlineAddParentId] = useState<string | null | "root">(null);
+  const [outlineAddTitle, setOutlineAddTitle] = useState("");
+  const [outlineAddNumber, setOutlineAddNumber] = useState("");
   const fetchAnalyses = useCallback(async () => {
     if (!user) return;
     const { data } = await supabase
@@ -480,6 +490,96 @@ c) 字体：有明确要求的按要求执行，没有明确要求按文档模�
     await supabase.from("bid_collaborators").delete().eq("id", collabId);
     toast({ title: "已移除协作者" });
     fetchCollaborators(selectedProposal.id);
+  };
+
+  // ---- Outline CRUD handlers ----
+  const handleOutlineAdd = async (parentId: string | null) => {
+    if (!selectedProposal || !outlineAddTitle.trim()) return;
+    const flat = flattenSections(sections);
+    // Compute sort_order: max + 1 among siblings
+    const siblings = flat.filter(f => f.section.parent_id === parentId);
+    const maxOrder = siblings.length > 0 ? Math.max(...siblings.map(f => f.section.sort_order)) : -1;
+    const { error } = await supabase.from("proposal_sections").insert({
+      proposal_id: selectedProposal.id,
+      title: outlineAddTitle.trim(),
+      section_number: outlineAddNumber.trim() || null,
+      parent_id: parentId,
+      sort_order: maxOrder + 1,
+    } as any);
+    if (error) { toast({ title: "添加失败", description: error.message, variant: "destructive" }); return; }
+    toast({ title: "已添加章节" });
+    setOutlineAddParentId(null);
+    setOutlineAddTitle("");
+    setOutlineAddNumber("");
+    fetchProposalDetails(selectedProposal.id);
+  };
+
+  const handleOutlineRename = async (sectionId: string) => {
+    if (!outlineEditTitle.trim()) return;
+    const { error } = await supabase.from("proposal_sections").update({ title: outlineEditTitle.trim() }).eq("id", sectionId);
+    if (error) { toast({ title: "修改失败", description: error.message, variant: "destructive" }); return; }
+    // Update local state
+    const updateTitle = (list: ProposalSection[]): ProposalSection[] =>
+      list.map(s => ({
+        ...s,
+        title: s.id === sectionId ? outlineEditTitle.trim() : s.title,
+        children: s.children ? updateTitle(s.children) : undefined,
+      }));
+    setSections(updateTitle(sections));
+    setOutlineEditId(null);
+    setOutlineEditTitle("");
+    toast({ title: "已修改章节名称" });
+  };
+
+  const handleOutlineDelete = async (sectionId: string) => {
+    if (!selectedProposal) return;
+    // Delete the section and all its children (cascade via parent_id)
+    // First collect all descendant IDs
+    const collectIds = (list: ProposalSection[], targetId: string): string[] => {
+      const ids: string[] = [];
+      for (const s of list) {
+        if (s.id === targetId) {
+          ids.push(s.id);
+          if (s.children) {
+            const collectChildren = (children: ProposalSection[]) => {
+              for (const c of children) {
+                ids.push(c.id);
+                if (c.children) collectChildren(c.children);
+              }
+            };
+            collectChildren(s.children);
+          }
+        } else if (s.children) {
+          ids.push(...collectIds(s.children, targetId));
+        }
+      }
+      return ids;
+    };
+    const idsToDelete = collectIds(sections, sectionId);
+    if (idsToDelete.length === 0) return;
+    const { error } = await supabase.from("proposal_sections").delete().in("id", idsToDelete);
+    if (error) { toast({ title: "删除失败", description: error.message, variant: "destructive" }); return; }
+    toast({ title: "已删除章节", description: idsToDelete.length > 1 ? `包含 ${idsToDelete.length - 1} 个子章节` : undefined });
+    fetchProposalDetails(selectedProposal.id);
+  };
+
+  const handleOutlineMove = async (sectionId: string, direction: "up" | "down") => {
+    if (!selectedProposal) return;
+    const flat = flattenSections(sections);
+    const target = flat.find(f => f.section.id === sectionId);
+    if (!target) return;
+    const siblings = flat.filter(f => f.section.parent_id === target.section.parent_id)
+      .sort((a, b) => a.section.sort_order - b.section.sort_order);
+    const idx = siblings.findIndex(f => f.section.id === sectionId);
+    const swapIdx = direction === "up" ? idx - 1 : idx + 1;
+    if (swapIdx < 0 || swapIdx >= siblings.length) return;
+    const a = siblings[idx].section;
+    const b = siblings[swapIdx].section;
+    await Promise.all([
+      supabase.from("proposal_sections").update({ sort_order: b.sort_order } as any).eq("id", a.id),
+      supabase.from("proposal_sections").update({ sort_order: a.sort_order } as any).eq("id", b.id),
+    ]);
+    fetchProposalDetails(selectedProposal.id);
   };
 
   const fetchCompanyMaterials = useCallback(async () => {
@@ -1490,30 +1590,142 @@ c) 字体：有明确要求的按要求执行，没有明确要求按文档模�
             {/* Left panel: Outline */}
             <ResizablePanel defaultSize={22} minSize={15} maxSize={35}>
               <div className="flex flex-col h-full border-r border-border">
-                <div className="px-3 py-2 border-b border-border bg-muted/30 shrink-0">
+                <div className="px-3 py-2 border-b border-border bg-muted/30 shrink-0 flex items-center justify-between">
                   <p className="text-xs font-semibold text-foreground">📋 提纲目录</p>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 w-6 p-0"
+                    onClick={() => { setOutlineAddParentId("root"); setOutlineAddTitle(""); setOutlineAddNumber(""); }}
+                    title="添加一级章节"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                  </Button>
                 </div>
                 <ScrollArea className="flex-1">
                   <div className="p-2 space-y-0.5">
+                    {/* Add root section form */}
+                    {outlineAddParentId === "root" && (
+                      <div className="p-2 mb-1 rounded-md border border-border bg-muted/30 space-y-1.5">
+                        <Input
+                          className="h-7 text-xs"
+                          placeholder="章节编号（可选）"
+                          value={outlineAddNumber}
+                          onChange={(e) => setOutlineAddNumber(e.target.value)}
+                          autoFocus
+                        />
+                        <Input
+                          className="h-7 text-xs"
+                          placeholder="章节标题"
+                          value={outlineAddTitle}
+                          onChange={(e) => setOutlineAddTitle(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === "Enter") handleOutlineAdd(null); if (e.key === "Escape") setOutlineAddParentId(null); }}
+                        />
+                        <div className="flex gap-1">
+                          <Button size="sm" className="h-6 text-[10px] px-2" onClick={() => handleOutlineAdd(null)} disabled={!outlineAddTitle.trim()}>
+                            确认
+                          </Button>
+                          <Button size="sm" variant="ghost" className="h-6 text-[10px] px-2" onClick={() => setOutlineAddParentId(null)}>
+                            取消
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+
                     {allFlat.map(({ section: s, depth: d }) => (
-                      <button
-                        key={s.id}
-                        onClick={() => {
-                          setSelectedSectionId(s.id === selectedSectionId ? null : s.id);
-                          // Auto-scroll center panel to this section
-                          const el = document.getElementById(`section-${s.id}`);
-                          if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
-                        }}
-                        className={`w-full text-left px-2 py-1.5 rounded text-xs transition-colors ${
-                          s.id === selectedSectionId
-                            ? "bg-accent text-accent-foreground font-medium"
-                            : "text-muted-foreground hover:bg-secondary hover:text-foreground"
-                        }`}
-                        style={{ paddingLeft: `${8 + d * 12}px` }}
-                      >
-                        {s.section_number && <span className="mr-1 opacity-60">{s.section_number}</span>}
-                        {s.title}
-                      </button>
+                      <div key={s.id}>
+                        {/* Editing title inline */}
+                        {outlineEditId === s.id ? (
+                          <div className="flex items-center gap-1 py-0.5" style={{ paddingLeft: `${8 + d * 12}px` }}>
+                            <Input
+                              className="h-6 text-xs flex-1"
+                              value={outlineEditTitle}
+                              onChange={(e) => setOutlineEditTitle(e.target.value)}
+                              onKeyDown={(e) => { if (e.key === "Enter") handleOutlineRename(s.id); if (e.key === "Escape") setOutlineEditId(null); }}
+                              autoFocus
+                            />
+                            <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => handleOutlineRename(s.id)}>
+                              <CheckCircle className="w-3 h-3 text-green-500" />
+                            </Button>
+                            <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => setOutlineEditId(null)}>
+                              <X className="w-3 h-3" />
+                            </Button>
+                          </div>
+                        ) : (
+                          <div className="group flex items-center">
+                            <button
+                              onClick={() => {
+                                setSelectedSectionId(s.id === selectedSectionId ? null : s.id);
+                                const el = document.getElementById(`section-${s.id}`);
+                                if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+                              }}
+                              className={`flex-1 text-left px-2 py-1.5 rounded-l text-xs transition-colors truncate ${
+                                s.id === selectedSectionId
+                                  ? "bg-accent text-accent-foreground font-medium"
+                                  : "text-muted-foreground hover:bg-secondary hover:text-foreground"
+                              }`}
+                              style={{ paddingLeft: `${8 + d * 12}px` }}
+                            >
+                              {s.section_number && <span className="mr-1 opacity-60">{s.section_number}</span>}
+                              {s.title}
+                            </button>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <button className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-secondary shrink-0">
+                                  <MoreVertical className="w-3 h-3 text-muted-foreground" />
+                                </button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end" className="w-36">
+                                <DropdownMenuItem onClick={() => { setOutlineEditId(s.id); setOutlineEditTitle(s.title); }}>
+                                  <Pencil className="w-3.5 h-3.5 mr-2" />重命名
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => { setOutlineAddParentId(s.id); setOutlineAddTitle(""); setOutlineAddNumber(""); }}>
+                                  <FolderPlus className="w-3.5 h-3.5 mr-2" />添加子章节
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem onClick={() => handleOutlineMove(s.id, "up")}>
+                                  <ChevronUp className="w-3.5 h-3.5 mr-2" />上移
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => handleOutlineMove(s.id, "down")}>
+                                  <ChevronDown className="w-3.5 h-3.5 mr-2" />下移
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => handleOutlineDelete(s.id)}>
+                                  <Trash2 className="w-3.5 h-3.5 mr-2" />删除
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
+                        )}
+
+                        {/* Add child section form */}
+                        {outlineAddParentId === s.id && (
+                          <div className="ml-4 p-2 my-1 rounded-md border border-border bg-muted/30 space-y-1.5" style={{ marginLeft: `${8 + (d + 1) * 12}px` }}>
+                            <Input
+                              className="h-7 text-xs"
+                              placeholder="编号（可选）"
+                              value={outlineAddNumber}
+                              onChange={(e) => setOutlineAddNumber(e.target.value)}
+                              autoFocus
+                            />
+                            <Input
+                              className="h-7 text-xs"
+                              placeholder="子章节标题"
+                              value={outlineAddTitle}
+                              onChange={(e) => setOutlineAddTitle(e.target.value)}
+                              onKeyDown={(e) => { if (e.key === "Enter") handleOutlineAdd(s.id); if (e.key === "Escape") setOutlineAddParentId(null); }}
+                            />
+                            <div className="flex gap-1">
+                              <Button size="sm" className="h-6 text-[10px] px-2" onClick={() => handleOutlineAdd(s.id)} disabled={!outlineAddTitle.trim()}>
+                                确认
+                              </Button>
+                              <Button size="sm" variant="ghost" className="h-6 text-[10px] px-2" onClick={() => setOutlineAddParentId(null)}>
+                                取消
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     ))}
                   </div>
                 </ScrollArea>
