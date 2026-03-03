@@ -13,15 +13,14 @@ async function loginRAGPlus(): Promise<string> {
   const res = await fetch(`${RAGPLUS_BASE}/api/auth/user/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ userName: "admin", passWord: "ragyftd18" }),
+    body: JSON.stringify({ name: "admin", password: "ragyftd18" }),
   });
   if (!res.ok) throw new Error(`RAGPlus登录失败: ${res.status}`);
   const json = await res.json();
-  console.log("RAGPlus login response:", JSON.stringify(json));
-  // Try multiple possible token paths
-  const token = json?.data?.token || json?.data || json?.token || json?.access_token;
+  console.log("RAGPlus login response code:", json?.code);
+  const token = json?.data;
   if (!token || typeof token !== "string") {
-    throw new Error(`RAGPlus登录返回无效Token, 返回结构: ${JSON.stringify(json).substring(0, 500)}`);
+    throw new Error(`RAGPlus登录返回无效Token: ${JSON.stringify(json).substring(0, 200)}`);
   }
   return token;
 }
