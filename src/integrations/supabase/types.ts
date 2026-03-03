@@ -237,6 +237,8 @@ export type Database = {
           proposal_doc_progress: string | null
           proposal_doc_status: string
           status: string
+          toc_progress: string | null
+          toc_status: string
           token_usage: Json | null
           updated_at: string
           user_id: string
@@ -253,6 +255,8 @@ export type Database = {
           proposal_doc_progress?: string | null
           proposal_doc_status?: string
           status?: string
+          toc_progress?: string | null
+          toc_status?: string
           token_usage?: Json | null
           updated_at?: string
           user_id: string
@@ -269,6 +273,8 @@ export type Database = {
           proposal_doc_progress?: string | null
           proposal_doc_status?: string
           status?: string
+          toc_progress?: string | null
+          toc_status?: string
           token_usage?: Json | null
           updated_at?: string
           user_id?: string

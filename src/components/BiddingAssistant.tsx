@@ -17,7 +17,7 @@ import {
   ClipboardCheck, Trash2, Search, Sparkles, Download, Upload, Paperclip,
   ShieldCheck, AlertCircle, Clock, Image as ImageIcon, UserPlus, X,
   Send, MessageSquare, PanelLeftClose, PanelRightClose,
-  Pencil, MoreVertical, ChevronUp, FolderPlus,
+  Pencil, MoreVertical, ChevronUp, FolderPlus, BookOpen,
 } from "lucide-react";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem,
@@ -365,6 +365,9 @@ c) 字体：有明确要求的按要求执行，没有明确要求按文档模�
   const [generatingDoc, setGeneratingDoc] = useState(false);
   const [docStatus, setDocStatus] = useState<string>("pending");
   const [docProgress, setDocProgress] = useState<string | null>(null);
+  const [tocStatus, setTocStatus] = useState<string>("pending");
+  const [tocProgress, setTocProgress] = useState<string | null>(null);
+  const [generatingToc, setGeneratingToc] = useState(false);
   const [activeTab, setActiveTab] = useState("outline");
   const [workspaceMode, setWorkspaceMode] = useState(false);
   const [chatMessages, setChatMessages] = useState<{ role: "user" | "assistant"; content: string }[]>([]);
@@ -685,6 +688,8 @@ c) 字体：有明确要求的按要求执行，没有明确要求按文档模�
         lastSyncedProposalId.current = selectedProposal.id;
         setDocStatus((selectedProposal as any).proposal_doc_status || "pending");
         setDocProgress((selectedProposal as any).proposal_doc_progress || null);
+        setTocStatus((selectedProposal as any).toc_status || "pending");
+        setTocProgress((selectedProposal as any).toc_progress || null);
         setActiveTab("outline");
       }
     }
@@ -713,6 +718,49 @@ c) 字体：有明确要求的按要求执行，没有明确要求按文档模�
     }, 3000);
     return () => clearInterval(interval);
   }, [selectedProposal?.id, docStatus, fetchProposalDetails]);
+
+  // Poll for TOC generation progress
+  useEffect(() => {
+    if (!selectedProposal || tocStatus !== "processing") return;
+    const interval = setInterval(async () => {
+      const { data } = await supabase
+        .from("bid_proposals")
+        .select("toc_status, toc_progress")
+        .eq("id", selectedProposal.id)
+        .single();
+      if (data) {
+        const d = data as any;
+        setTocStatus(d.toc_status || "pending");
+        setTocProgress(d.toc_progress || null);
+        if (d.toc_status !== "processing") {
+          clearInterval(interval);
+          if (d.toc_status === "completed") {
+            fetchProposalDetails(selectedProposal.id);
+          }
+        }
+      }
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [selectedProposal?.id, tocStatus, fetchProposalDetails]);
+
+  const handleGenerateToc = async () => {
+    if (!selectedProposal) return;
+    setGeneratingToc(true);
+    setTocStatus("processing");
+    setTocProgress("正在登录知识库...");
+    try {
+      const { error } = await supabase.functions.invoke("generate-toc", {
+        body: { proposalId: selectedProposal.id },
+      });
+      if (error) throw error;
+    } catch (e: any) {
+      toast({ title: "目录生成失败", description: e.message, variant: "destructive" });
+      setTocStatus("failed");
+      setTocProgress(e.message);
+    } finally {
+      setGeneratingToc(false);
+    }
+  };
 
   const handleGenerateProposal = async () => {
     if (!selectedProposal) return;
@@ -2163,9 +2211,67 @@ c) 字体：有明确要求的按要求执行，没有明确要求按文档模�
                   </Card>
                 )}
 
+                {/* TOC Generation Progress */}
+                {tocStatus === "processing" && (
+                  <Card className="border-accent/30">
+                    <CardContent className="pt-4">
+                      <div className="flex items-center gap-3">
+                        <Loader2 className="w-5 h-5 animate-spin text-accent shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-foreground">正在生成标书目录</p>
+                          <p className="text-xs text-muted-foreground mt-1 truncate">{tocProgress || "处理中..."}</p>
+                          {(() => {
+                            const match = tocProgress?.match(/\((\d+)\/(\d+)\)/);
+                            if (!match) return null;
+                            const cur = parseInt(match[1]);
+                            const tot = parseInt(match[2]);
+                            const pct = Math.round((cur / tot) * 100);
+                            return <Progress value={pct} className="h-1.5 mt-2" />;
+                          })()}
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {tocStatus === "failed" && (
+                  <Card className="border-destructive/30">
+                    <CardContent className="pt-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <XCircle className="w-4 h-4 text-destructive shrink-0" />
+                          <div>
+                            <p className="text-sm font-medium text-foreground">标书目录生成失败</p>
+                            <p className="text-xs text-muted-foreground">{tocProgress || "未知错误"}</p>
+                          </div>
+                        </div>
+                        <Button size="sm" variant="outline" onClick={handleGenerateToc} disabled={generatingToc}>
+                          <RefreshCw className="w-3.5 h-3.5 mr-1" />重试
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
                 <Card>
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-sm">投标文件提纲</CardTitle>
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-sm">投标文件提纲</CardTitle>
+                      {sections.length > 0 && tocStatus !== "processing" && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={handleGenerateToc}
+                          disabled={generatingToc || tocStatus === "processing"}
+                        >
+                          {generatingToc ? (
+                            <><Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />提交中...</>
+                          ) : (
+                            <><BookOpen className="w-3.5 h-3.5 mr-1" />生成标书目录</>
+                          )}
+                        </Button>
+                      )}
+                    </div>
                   </CardHeader>
                   <CardContent>
                     <div>
