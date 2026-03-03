@@ -17,8 +17,12 @@ async function loginRAGPlus(): Promise<string> {
   });
   if (!res.ok) throw new Error(`RAGPlus登录失败: ${res.status}`);
   const json = await res.json();
-  const token = json?.data;
-  if (!token) throw new Error("RAGPlus登录返回无效Token");
+  console.log("RAGPlus login response:", JSON.stringify(json));
+  // Try multiple possible token paths
+  const token = json?.data?.token || json?.data || json?.token || json?.access_token;
+  if (!token || typeof token !== "string") {
+    throw new Error(`RAGPlus登录返回无效Token, 返回结构: ${JSON.stringify(json).substring(0, 500)}`);
+  }
   return token;
 }
 
