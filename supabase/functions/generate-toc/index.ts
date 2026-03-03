@@ -113,6 +113,16 @@ async function generateToc(supabase: any, proposalId: string) {
     if (secErr) throw new Error(`获取章节失败: ${secErr.message}`);
     if (!allSections || allSections.length === 0) throw new Error("提纲为空，请先生成提纲");
 
+    // Clear existing TOC content before regenerating
+    await supabase.from("bid_proposals").update({
+      toc_progress: "正在清除旧目录内容...",
+    } as any).eq("id", proposalId);
+
+    // Clear content for all sections before regenerating
+    for (const sec of allSections) {
+      await supabase.from("proposal_sections").update({ content: null }).eq("id", sec.id);
+    }
+
     // Build parent-child map
     const childMap = new Map<string, any[]>();
     for (const s of allSections) {
