@@ -45,8 +45,13 @@ async function queryKnowledgeBase(token: string, queryText: string): Promise<str
     throw new Error(`RAGPlus查询失败: ${res.status} ${txt}`);
   }
   const json = await res.json();
-  // Extract the answer text from response
-  return json?.data?.answer || json?.data?.content || json?.data || JSON.stringify(json);
+  // Extract only queryResult.response from RAGPlus response
+  const queryResult = json?.data?.queryResult || json?.queryResult;
+  if (queryResult?.response) {
+    return queryResult.response;
+  }
+  // Fallback: try other known paths
+  return json?.data?.answer || json?.data?.content || JSON.stringify(json);
 }
 
 serve(async (req) => {
