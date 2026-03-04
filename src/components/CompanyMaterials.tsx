@@ -17,6 +17,8 @@ import {
   AlertTriangle,
   ShieldCheck,
   Eye,
+  FileText,
+  Download,
 } from "lucide-react";
 import {
   Dialog,
@@ -24,6 +26,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import MaterialExtractor from "./MaterialExtractor";
 
 interface CompanyMaterial {
   id: string;
@@ -66,6 +69,7 @@ export default function CompanyMaterials() {
   const [uploading, setUploading] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewName, setPreviewName] = useState("");
+  const [extractorOpen, setExtractorOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const fetchMaterials = useCallback(async () => {
@@ -89,6 +93,21 @@ export default function CompanyMaterials() {
   const getPublicUrl = (filePath: string) => {
     const { data } = supabase.storage.from("company-materials").getPublicUrl(filePath);
     return data.publicUrl;
+  };
+
+  const isImageFile = (mat: CompanyMaterial) => {
+    if (mat.file_type?.startsWith("image/")) return true;
+    return /\.(jpg|jpeg|png|webp|bmp|gif)$/i.test(mat.file_name);
+  };
+
+  const handleDownload = (mat: CompanyMaterial) => {
+    const url = getPublicUrl(mat.file_path);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = mat.file_name;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
   };
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -181,7 +200,7 @@ export default function CompanyMaterials() {
             管理公司资质证书、营业执照等图片材料，AI自动识别内容与有效期
           </p>
         </div>
-        <div>
+        <div className="flex gap-2">
           <input
             ref={fileInputRef}
             type="file"
@@ -190,6 +209,14 @@ export default function CompanyMaterials() {
             accept=".jpg,.jpeg,.png,.webp,.bmp,.gif"
             onChange={handleUpload}
           />
+          <Button
+            variant="outline"
+            onClick={() => setExtractorOpen(true)}
+            className="gap-2"
+          >
+            <FileText className="w-4 h-4" />
+            材料提取
+          </Button>
           <Button
             onClick={() => fileInputRef.current?.click()}
             disabled={uploading}
@@ -229,18 +256,35 @@ export default function CompanyMaterials() {
                 <div
                   className="relative aspect-[4/3] bg-muted cursor-pointer group"
                   onClick={() => {
-                    setPreviewUrl(imgUrl);
-                    setPreviewName(mat.file_name);
+                    if (isImageFile(mat)) {
+                      setPreviewUrl(imgUrl);
+                      setPreviewName(mat.file_name);
+                    } else {
+                      handleDownload(mat);
+                    }
                   }}
                 >
-                  <img
-                    src={imgUrl}
-                    alt={mat.file_name}
-                    className="w-full h-full object-contain"
-                    loading="lazy"
-                  />
+                  {isImageFile(mat) ? (
+                    <img
+                      src={imgUrl}
+                      alt={mat.file_name}
+                      className="w-full h-full object-contain"
+                      loading="lazy"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex flex-col items-center justify-center gap-2">
+                      <FileText className="w-12 h-12 text-muted-foreground" />
+                      <p className="text-xs text-muted-foreground font-medium">
+                        {mat.file_name.split('.').pop()?.toUpperCase()}
+                      </p>
+                    </div>
+                  )}
                   <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
-                    <Eye className="w-8 h-8 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                    {isImageFile(mat) ? (
+                      <Eye className="w-8 h-8 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                    ) : (
+                      <Download className="w-8 h-8 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                    )}
                   </div>
                   {/* Expiry badge overlay */}
                   {expiry && (
@@ -309,6 +353,13 @@ export default function CompanyMaterials() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Material Extractor */}
+      <MaterialExtractor
+        open={extractorOpen}
+        onOpenChange={setExtractorOpen}
+        onComplete={fetchMaterials}
+      />
     </div>
   );
 }
