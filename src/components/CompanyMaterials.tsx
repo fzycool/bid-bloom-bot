@@ -73,9 +73,10 @@ export default function CompanyMaterials() {
   const [extractorOpen, setExtractorOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [deleting, setDeleting] = useState(false);
+  const [selectMode, setSelectMode] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const inSelectMode = selectedIds.size > 0;
+  const inSelectMode = selectMode;
 
   const fetchMaterials = useCallback(async () => {
     if (!user) return;
@@ -212,6 +213,7 @@ export default function CompanyMaterials() {
       setMaterials((prev) => prev.filter((m) => !selectedIds.has(m.id)));
       toast({ title: `已删除 ${toDelete.length} 个材料` });
       setSelectedIds(new Set());
+      setSelectMode(false);
     } catch (err: any) {
       toast({ title: "批量删除失败", description: err.message, variant: "destructive" });
     } finally {
@@ -251,7 +253,7 @@ export default function CompanyMaterials() {
               <Button variant="outline" size="sm" onClick={toggleSelectAll}>
                 {selectedIds.size === materials.length ? "取消全选" : "全选"}
               </Button>
-              <Button variant="outline" size="sm" onClick={() => setSelectedIds(new Set())}>
+              <Button variant="outline" size="sm" onClick={() => { setSelectedIds(new Set()); setSelectMode(false); }}>
                 取消
               </Button>
               <Button
@@ -278,7 +280,7 @@ export default function CompanyMaterials() {
               {materials.length > 0 && (
                 <Button
                   variant="outline"
-                  onClick={() => setSelectedIds(new Set(materials.map((m) => m.id)))}
+                  onClick={() => setSelectMode(true)}
                   className="gap-2"
                 >
                   <Trash2 className="w-4 h-4" />
