@@ -15,6 +15,7 @@ import {
   LayoutDashboard,
   GitCompare,
   Building2,
+  LayoutTemplate,
 } from "lucide-react";
 import KnowledgeBase from "@/components/KnowledgeBase";
 import BidParser from "@/components/BidParser";
@@ -24,6 +25,7 @@ import HolographicAudit from "@/components/HolographicAudit";
 import BackendManagement from "@/components/BackendManagement";
 import BidComparison from "@/components/BidComparison";
 import CompanyMaterials from "@/components/CompanyMaterials";
+import ResumeTemplates from "@/components/ResumeTemplates";
 
 const baseModules = [
   { id: "overview", label: "数据看板", icon: LayoutDashboard },
@@ -35,6 +37,7 @@ const baseModules = [
   
   { id: "knowledge", label: "知识库", icon: BookOpen },
   { id: "materials", label: "公司材料", icon: Building2 },
+  { id: "templates", label: "简历模板", icon: LayoutTemplate },
 ];
 
 const Dashboard = () => {
@@ -137,6 +140,7 @@ const Dashboard = () => {
           {activeModule === "bid" && <BiddingAssistant />}
           {activeModule === "audit" && <HolographicAudit />}
           {activeModule === "materials" && <CompanyMaterials />}
+          {activeModule === "templates" && <ResumeTemplates />}
           
           {activeModule === "admin" && isAdmin && <BackendManagement />}
         </main>
