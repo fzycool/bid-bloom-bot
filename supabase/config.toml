@@ -26,3 +26,6 @@ verify_jwt = false
 
 [functions.contract-revision]
 verify_jwt = false
+
+[functions.extract-bid-chapters]
+verify_jwt = false
