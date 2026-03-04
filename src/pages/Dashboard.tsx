@@ -15,6 +15,7 @@ import {
   LayoutDashboard,
   GitCompare,
   Building2,
+  LayoutTemplate,
 } from "lucide-react";
 import KnowledgeBase from "@/components/KnowledgeBase";
 import BidParser from "@/components/BidParser";
