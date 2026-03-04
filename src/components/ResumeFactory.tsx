@@ -115,12 +115,20 @@ export default function ResumeFactory() {
 
   const fetchData = useCallback(async () => {
     if (!user) return;
-    const [empRes, bidRes] = await Promise.all([
+    const [empRes, bidRes, tplRes] = await Promise.all([
       supabase.from("employees").select("*").order("created_at", { ascending: false }),
       supabase.from("bid_analyses").select("id, project_name, ai_status, technical_keywords, business_keywords, responsibility_keywords, personnel_requirements").eq("ai_status", "completed").order("created_at", { ascending: false }),
+      supabase.from("resume_templates").select("id, template_name, file_path, is_default").order("is_default", { ascending: false }).order("created_at", { ascending: false }),
     ]);
     setEmployees((empRes.data as Employee[]) || []);
     setBidAnalyses((bidRes.data as BidAnalysis[]) || []);
+    const tpls = (tplRes.data as any[]) || [];
+    setResumeTemplates(tpls);
+    // Auto-select default template
+    if (tpls.length > 0 && !selectedTemplateId) {
+      const def = tpls.find((t: any) => t.is_default);
+      setSelectedTemplateId(def ? def.id : tpls[0].id);
+    }
     setLoading(false);
   }, [user]);
 
