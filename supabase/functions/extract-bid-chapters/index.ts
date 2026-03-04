@@ -34,24 +34,30 @@ function splitTextByChapters(
 
   // For each chapter, find ALL occurrences of its title patterns
   const chapterCandidates = chapters.map((ch) => {
-    const patterns = [
+    const fullPatterns = [
       `${ch.section_number} ${ch.title}`,
       `${ch.section_number}  ${ch.title}`,
       `${ch.section_number}\t${ch.title}`,
       `${ch.section_number}、${ch.title}`,
       `${ch.section_number}.${ch.title}`,
     ];
-    const allPositions: number[] = [];
-    for (const p of patterns) {
-      allPositions.push(...findAllOccurrences(fullText, p));
+    const fullPositions: number[] = [];
+    for (const p of fullPatterns) {
+      fullPositions.push(...findAllOccurrences(fullText, p));
     }
-    // Deduplicate and sort
-    const unique = [...new Set(allPositions)].sort((a, b) => a - b);
-    return { ...ch, candidates: unique };
+    // Title-only positions (for body headings without section numbers)
+    const titlePositions: number[] = [];
+    if (ch.title.length >= 3) {
+      titlePositions.push(...findAllOccurrences(fullText, ch.title));
+    }
+    return {
+      ...ch,
+      candidates: [...new Set(fullPositions)].sort((a, b) => a - b),
+      titleCandidates: [...new Set(titlePositions)].sort((a, b) => a - b),
+    };
   });
 
-  // Detect TOC region: if many chapters cluster in a small region, that's the TOC.
-  // Collect all first-occurrence positions to detect cluster.
+  // Detect TOC region
   const firstPositions = chapterCandidates
     .filter((ch) => ch.candidates.length > 0)
     .map((ch) => ch.candidates[0])
@@ -69,29 +75,44 @@ function splitTextByChapters(
     }
   }
 
-  // Debug: log candidates
-  chapterCandidates.slice(0, 5).forEach((ch, i) => {
-    console.log(`  candidates[${i}] "${ch.section_number} ${ch.title}": positions=[${ch.candidates.join(",")}]`);
-  });
-
-  // Now pick positions sequentially, preferring ones AFTER tocEnd
+  // Pick positions sequentially, preferring ones AFTER tocEnd
+  // Strategy: first try full pattern after tocEnd, then title-only after tocEnd
   let minPos = tocEnd;
   const located: Array<Chapter & { position: number }> = [];
 
   for (const ch of chapterCandidates) {
-    // Find the first candidate at or after minPos
     let chosen = -1;
+
+    // 1. Try full pattern (section_number + title) after minPos
     for (const pos of ch.candidates) {
       if (pos >= minPos) {
         chosen = pos;
         break;
       }
     }
-    // Fallback: if no candidate after minPos, use last candidate (least likely TOC)
-    if (chosen < 0 && ch.candidates.length > 0) {
-      chosen = ch.candidates[ch.candidates.length - 1];
+
+    // 2. If not found, try title-only after minPos
+    if (chosen < 0) {
+      for (const pos of ch.titleCandidates) {
+        if (pos >= minPos) {
+          chosen = pos;
+          break;
+        }
+      }
     }
+
+    // 3. Last fallback: title-only after tocEnd (reset sequential constraint)
+    if (chosen < 0 && tocEnd > 0) {
+      for (const pos of ch.titleCandidates) {
+        if (pos >= tocEnd) {
+          chosen = pos;
+          break;
+        }
+      }
+    }
+
     if (chosen >= 0) {
+      console.log(`  matched "${ch.section_number} ${ch.title}" at pos=${chosen}, content_preview="${fullText.substring(chosen, chosen + 40)}"`);
       located.push({
         section_number: ch.section_number,
         title: ch.title,
