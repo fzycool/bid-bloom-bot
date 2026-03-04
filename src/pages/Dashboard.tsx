@@ -25,6 +25,7 @@ import HolographicAudit from "@/components/HolographicAudit";
 import BackendManagement from "@/components/BackendManagement";
 import BidComparison from "@/components/BidComparison";
 import CompanyMaterials from "@/components/CompanyMaterials";
+import ResumeTemplates from "@/components/ResumeTemplates";
 
 const baseModules = [
   { id: "overview", label: "数据看板", icon: LayoutDashboard },
