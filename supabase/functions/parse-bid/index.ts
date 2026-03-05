@@ -3,15 +3,34 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { encode as base64Encode } from "https://deno.land/std@0.168.0/encoding/base64.ts";
 import { unzipSync } from "npm:fflate@0.8.2";
 import * as XLSX from "npm:xlsx@0.18.5";
+import WordExtractor from "npm:word-extractor@1.0.4";
 
 function extractTextFromDocx(arrayBuffer: ArrayBuffer): string {
   const uint8 = new Uint8Array(arrayBuffer);
+  if (uint8.length < 4 || uint8[0] !== 0x50 || uint8[1] !== 0x4B) {
+    throw new Error("NOT_DOCX");
+  }
   const unzipped = unzipSync(uint8);
   const docXml = unzipped["word/document.xml"];
   if (!docXml) return "";
   const xmlStr = new TextDecoder().decode(docXml);
   const text = xmlStr.replace(/<w:p[^>]*>/g, "\n").replace(/<w:t[^>]*>([^<]*)<\/w:t>/g, "$1").replace(/<[^>]+>/g, "");
   return text.trim();
+}
+
+async function extractTextFromOldDoc(arrayBuffer: ArrayBuffer): Promise<string> {
+  const uint8 = new Uint8Array(arrayBuffer);
+  if (uint8.length < 8 || uint8[0] !== 0xD0 || uint8[1] !== 0xCF || uint8[2] !== 0x11 || uint8[3] !== 0xE0) {
+    throw new Error("NOT_DOC");
+  }
+  const extractor = new WordExtractor();
+  const doc = await extractor.extract(Buffer.from(uint8));
+  return doc.getBody()?.trim() || "";
+}
+
+function isOldDocFormat(arrayBuffer: ArrayBuffer): boolean {
+  const uint8 = new Uint8Array(arrayBuffer);
+  return uint8.length >= 8 && uint8[0] === 0xD0 && uint8[1] === 0xCF && uint8[2] === 0x11 && uint8[3] === 0xE0;
 }
 
 function extractTextFromExcel(arrayBuffer: ArrayBuffer): string {
@@ -330,8 +349,27 @@ serve(async (req) => {
           });
         }
       } else {
-        // DOCX/DOC: extract text content
-        let textContent = extractTextFromDocx(arrayBuffer);
+        // DOCX or old DOC: extract text content
+        let textContent = "";
+        if (isOldDocFormat(arrayBuffer)) {
+          try {
+            textContent = await extractTextFromOldDoc(arrayBuffer);
+          } catch (docErr: any) {
+            console.error("Old .doc extraction failed:", docErr);
+            await supabase.from("bid_analyses").update({ ai_status: "failed" }).eq("id", analysisId);
+            throw new Error("无法从.doc文件中提取内容，请尝试用Word另存为.docx或PDF后重新上传");
+          }
+        } else {
+          try {
+            textContent = extractTextFromDocx(arrayBuffer);
+          } catch (docxErr: any) {
+            if (docxErr?.message === "NOT_DOCX") {
+              await supabase.from("bid_analyses").update({ ai_status: "failed" }).eq("id", analysisId);
+              throw new Error("该文件不是有效的Word格式，请确认文件格式后重新上传");
+            }
+            throw docxErr;
+          }
+        }
         if (!textContent) {
           await supabase.from("bid_analyses").update({ ai_status: "failed" }).eq("id", analysisId);
           throw new Error("无法从文档中提取文本内容，请尝试转换为PDF后重新上传");
