@@ -184,8 +184,10 @@ serve(async (req) => {
       throw new Error("文档内容过少，无法提取章节结构");
     }
 
+    // For chapter extraction, we only need the beginning of the document (TOC + first chapters)
+    // Sending too much text can overwhelm the model
     const forAI =
-      fullText.length > 80000 ? fullText.substring(0, 80000) : fullText;
+      fullText.length > 40000 ? fullText.substring(0, 40000) : fullText;
 
     const systemPrompt = `你是专业的文档结构分析师。请分析以下文档内容，提取完整的章节目录结构（包括所有层级）。
 
@@ -261,7 +263,7 @@ serve(async (req) => {
     if (lovableKey) {
       try {
         const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 60000);
+        const timer = setTimeout(() => controller.abort(), 120000);
 
         const resp = await fetch(
           "https://ai.gateway.lovable.dev/v1/chat/completions",
@@ -282,13 +284,15 @@ serve(async (req) => {
                 type: "function",
                 function: { name: "extract_chapters" },
               },
-              max_tokens: 8192,
+              max_tokens: 16384,
               temperature: 0.1,
             }),
             signal: controller.signal,
           }
         );
         clearTimeout(timer);
+
+        console.log("Lovable AI response status:", resp.status);
 
         if (resp.status === 429)
           throw new Error("Rate limited, please try again later.");
@@ -297,21 +301,95 @@ serve(async (req) => {
 
         if (resp.ok) {
           const data = await resp.json();
+          console.log("AI response finish_reason:", data.choices?.[0]?.finish_reason);
           const toolCall = data.choices?.[0]?.message?.tool_calls?.[0];
           if (toolCall) {
             const args = JSON.parse(toolCall.function.arguments);
             chapters = args.chapters || [];
+            console.log("Extracted chapters via tool_call:", chapters.length);
           } else {
             const content = data.choices?.[0]?.message?.content || "";
+            console.log("No tool_call, content length:", content.length, "preview:", content.substring(0, 200));
+            // Try to extract JSON from content
             const match = content.match(/\{[\s\S]*\}/);
             if (match) {
-              const parsed = JSON.parse(match[0]);
-              chapters = parsed.chapters || [];
+              try {
+                const parsed = JSON.parse(match[0]);
+                chapters = parsed.chapters || [];
+              } catch { /* ignore parse error */ }
+            }
+            // Try to extract JSON array directly
+            if (!chapters.length) {
+              const arrMatch = content.match(/\[[\s\S]*\]/);
+              if (arrMatch) {
+                try {
+                  const parsed = JSON.parse(arrMatch[0]);
+                  if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].title) {
+                    chapters = parsed;
+                  }
+                } catch { /* ignore parse error */ }
+              }
             }
           }
+        } else {
+          const errText = await resp.text();
+          console.error("Lovable AI non-ok response:", resp.status, errText.substring(0, 500));
         }
       } catch (e: any) {
         console.error("Lovable AI error:", e.message);
+      }
+
+      // If tool_choice failed, retry WITHOUT tool_choice as fallback
+      if (!chapters.length && lovableKey) {
+        console.log("Retrying without tool_choice...");
+        try {
+          const controller2 = new AbortController();
+          const timer2 = setTimeout(() => controller2.abort(), 120000);
+
+          const fallbackPrompt = systemPrompt + `\n\n请以JSON格式返回结果，格式为：{"chapters": [{"section_number": "编号", "title": "标题", "level": 层级数字}]}`;
+
+          const resp2 = await fetch(
+            "https://ai.gateway.lovable.dev/v1/chat/completions",
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${lovableKey}`,
+              },
+              body: JSON.stringify({
+                model: "google/gemini-2.5-flash",
+                messages: [
+                  { role: "system", content: fallbackPrompt },
+                  { role: "user", content: forAI },
+                ],
+                max_tokens: 16384,
+                temperature: 0.1,
+              }),
+              signal: controller2.signal,
+            }
+          );
+          clearTimeout(timer2);
+
+          if (resp2.ok) {
+            const data2 = await resp2.json();
+            const content2 = data2.choices?.[0]?.message?.content || "";
+            console.log("Fallback response length:", content2.length);
+            // Extract JSON from markdown code blocks or raw content
+            const cleaned = content2.replace(/```json\s*/g, "").replace(/```\s*/g, "");
+            const jsonMatch = cleaned.match(/\{[\s\S]*"chapters"[\s\S]*\}/);
+            if (jsonMatch) {
+              try {
+                const parsed = JSON.parse(jsonMatch[0]);
+                chapters = parsed.chapters || [];
+                console.log("Fallback extracted chapters:", chapters.length);
+              } catch (pe) {
+                console.error("Fallback JSON parse error:", pe.message);
+              }
+            }
+          }
+        } catch (e: any) {
+          console.error("Fallback AI error:", e.message);
+        }
       }
     }
 
