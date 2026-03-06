@@ -15,7 +15,7 @@ import {
   Plus, FileText, CheckCircle, AlertTriangle, XCircle,
   RefreshCw, Users, ChevronRight, ChevronDown, Loader2,
   ClipboardCheck, Trash2, Search, Sparkles, Download, Upload, Paperclip,
-  ShieldCheck, AlertCircle, Clock, Image as ImageIcon, UserPlus, X,
+  ShieldCheck, AlertCircle, Clock, Image as ImageIcon, UserPlus, X, ChevronLeft,
   Send, MessageSquare, PanelLeftClose, PanelRightClose,
   Pencil, MoreVertical, ChevronUp, FolderPlus, BookOpen,
 } from "lucide-react";
@@ -27,6 +27,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType, Header, Footer, LevelFormat, convertInchesToTwip, LevelSuffix } from "docx";
 import { saveAs } from "file-saver";
 import JSZip from "jszip";
@@ -407,6 +408,8 @@ c) 字体：有明确要求的按要求执行，没有明确要求按文档模�
   const [showTocImportDialog, setShowTocImportDialog] = useState(false);
   const [tocImportSources, setTocImportSources] = useState<{ id: string; name: string; category: string | null; toc: any[] }[]>([]);
   const [importingToc, setImportingToc] = useState(false);
+  const [selectedImportSource, setSelectedImportSource] = useState<{ id: string; name: string; category: string | null; toc: any[] } | null>(null);
+  const [selectedImportChapters, setSelectedImportChapters] = useState<Set<number>>(new Set());
   const fetchAnalyses = useCallback(async () => {
     if (!user) return;
     const { data } = await supabase
@@ -621,26 +624,21 @@ c) 字体：有明确要求的按要求执行，没有明确要求按文档模�
         toc: a.document_structure,
       }));
     setTocImportSources(sources);
+    setSelectedImportSource(null);
+    setSelectedImportChapters(new Set());
     setShowTocImportDialog(true);
   };
 
-  const handleImportToc = async (source: { id: string; name: string; toc: any[] }) => {
-    if (!selectedProposal || !source.toc.length) return;
+  const handleImportToc = async (source: { id: string; name: string; toc: any[] }, chapterIndices?: Set<number>) => {
+    const filteredToc = chapterIndices && chapterIndices.size > 0
+      ? source.toc.filter((_: any, i: number) => chapterIndices.has(i))
+      : source.toc;
+    if (!selectedProposal || !filteredToc.length) return;
     setImportingToc(true);
     try {
-      // Build flat sections from TOC structure
-      const inserts = source.toc.map((ch: any, idx: number) => ({
-        proposal_id: selectedProposal.id,
-        title: ch.title,
-        section_number: ch.section_number || null,
-        parent_id: null as string | null,
-        sort_order: idx,
-      }));
-
       // For hierarchical import: group by level
-      // First insert level-1 items, then level-2 with parent_id, etc.
-      const level1 = source.toc.filter((ch: any) => (ch.level || 1) === 1);
-      const level2Plus = source.toc.filter((ch: any) => (ch.level || 1) > 1);
+      const level1 = filteredToc.filter((ch: any) => (ch.level || 1) === 1);
+      const level2Plus = filteredToc.filter((ch: any) => (ch.level || 1) > 1);
 
       // Insert level-1 sections
       const level1Inserts = level1.map((ch: any, idx: number) => ({
@@ -666,15 +664,12 @@ c) 字体：有明确要求的按要求执行，没有明确要求按文档模�
       // Insert sub-level sections
       if (level2Plus.length > 0) {
         const subInserts = level2Plus.map((ch: any, idx: number) => {
-          // Find parent by matching section_number prefix
           let parentId: string | null = null;
           const num = ch.section_number || "";
           const parts = num.split(/[.、-]/);
           if (parts.length > 1) {
-            // Try progressively shorter prefixes
             for (let len = parts.length - 1; len >= 1; len--) {
               const prefix = parts.slice(0, len).join(".");
-              // Try with original separator too
               const prefixAlt = parts.slice(0, len).join("、");
               if (parentMap.has(prefix)) { parentId = parentMap.get(prefix)!; break; }
               if (parentMap.has(prefixAlt)) { parentId = parentMap.get(prefixAlt)!; break; }
@@ -695,13 +690,12 @@ c) 字体：有明确要求的按要求执行，没有明确要求按文档模�
           .select("id, section_number");
         if (subErr) throw subErr;
 
-        // Register sub sections for deeper levels
         for (const row of (insertedSub || []) as any[]) {
           if (row.section_number) parentMap.set(row.section_number, row.id);
         }
       }
 
-      toast({ title: "导入成功", description: `已从「${source.name}」导入 ${source.toc.length} 个章节` });
+      toast({ title: "导入成功", description: `已从「${source.name}」导入 ${filteredToc.length} 个章节` });
       setShowTocImportDialog(false);
       fetchProposalDetails(selectedProposal.id);
     } catch (e: any) {
@@ -3235,24 +3229,36 @@ c) 字体：有明确要求的按要求执行，没有明确要求按文档模�
       </Dialog>
 
       {/* TOC Import Dialog */}
-      <Dialog open={showTocImportDialog} onOpenChange={setShowTocImportDialog}>
-        <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
+      <Dialog open={showTocImportDialog} onOpenChange={(open) => {
+        setShowTocImportDialog(open);
+        if (!open) { setSelectedImportSource(null); setSelectedImportChapters(new Set()); }
+      }}>
+        <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Download className="w-5 h-5" />
-              从公司材料库导入目录
+              {selectedImportSource ? `选择要导入的章节 — ${selectedImportSource.name}` : "从公司材料库导入目录"}
             </DialogTitle>
           </DialogHeader>
+
           {tocImportSources.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
               <p className="text-sm">暂无可导入的目录结构</p>
               <p className="text-xs mt-1">请先在公司材料库中通过"材料提取"功能提取标书目录</p>
             </div>
-          ) : (
-            <div className="space-y-3">
-              <p className="text-sm text-muted-foreground">选择要导入的标书目录，将作为提纲章节添加：</p>
+          ) : !selectedImportSource ? (
+            /* Step 1: Select project */
+            <div className="space-y-3 overflow-y-auto flex-1 pr-1">
+              <p className="text-sm text-muted-foreground">选择要导入的标书目录：</p>
               {tocImportSources.map((src) => (
-                <Card key={src.id} className="cursor-pointer hover:border-accent/50 transition-colors" onClick={() => !importingToc && handleImportToc(src)}>
+                <Card
+                  key={src.id}
+                  className="cursor-pointer hover:border-accent/50 transition-colors"
+                  onClick={() => {
+                    setSelectedImportSource(src);
+                    setSelectedImportChapters(new Set(src.toc.map((_: any, i: number) => i)));
+                  }}
+                >
                   <CardContent className="p-4">
                     <div className="flex items-center justify-between">
                       <div>
@@ -3266,24 +3272,90 @@ c) 字体：有明确要求的按要求执行，没有明确要求按文档模�
                           )}
                         </div>
                       </div>
-                      <Button size="sm" variant="outline" disabled={importingToc}>
-                        {importingToc ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "导入"}
-                      </Button>
+                      <ChevronRight className="w-4 h-4 text-muted-foreground" />
                     </div>
-                    {/* Preview first few items */}
-                    <div className="mt-2 text-xs text-muted-foreground space-y-0.5 max-h-32 overflow-y-auto">
-                      {src.toc.slice(0, 8).map((ch: any, idx: number) => (
+                    <div className="mt-2 text-xs text-muted-foreground space-y-0.5 max-h-24 overflow-y-auto">
+                      {src.toc.slice(0, 5).map((ch: any, idx: number) => (
                         <div key={idx} style={{ paddingLeft: `${((ch.level || 1) - 1) * 12}px` }}>
                           <span className="text-foreground/50 mr-1">{ch.section_number}</span>
                           {ch.title}
                         </div>
                       ))}
-                      {src.toc.length > 8 && <p className="text-muted-foreground/50">...还有 {src.toc.length - 8} 个章节</p>}
+                      {src.toc.length > 5 && <p className="text-muted-foreground/50">...还有 {src.toc.length - 5} 个章节</p>}
                     </div>
                   </CardContent>
                 </Card>
               ))}
             </div>
+          ) : (
+            /* Step 2: Select chapters */
+            <>
+              <div className="flex items-center justify-between">
+                <Button variant="ghost" size="sm" onClick={() => { setSelectedImportSource(null); setSelectedImportChapters(new Set()); }}>
+                  <ChevronLeft className="w-4 h-4 mr-1" />返回选择项目
+                </Button>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground">
+                    已选 {selectedImportChapters.size}/{selectedImportSource.toc.length} 个章节
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-xs"
+                    onClick={() => {
+                      if (selectedImportChapters.size === selectedImportSource.toc.length) {
+                        setSelectedImportChapters(new Set());
+                      } else {
+                        setSelectedImportChapters(new Set(selectedImportSource.toc.map((_: any, i: number) => i)));
+                      }
+                    }}
+                  >
+                    {selectedImportChapters.size === selectedImportSource.toc.length ? "取消全选" : "全选"}
+                  </Button>
+                </div>
+              </div>
+              <ScrollArea className="flex-1 max-h-[50vh] border rounded-md p-2">
+                <div className="space-y-0.5">
+                  {selectedImportSource.toc.map((ch: any, idx: number) => {
+                    const checked = selectedImportChapters.has(idx);
+                    return (
+                      <label
+                        key={idx}
+                        className="flex items-start gap-2 px-2 py-1.5 rounded hover:bg-muted/50 cursor-pointer"
+                        style={{ paddingLeft: `${((ch.level || 1) - 1) * 16 + 8}px` }}
+                      >
+                        <Checkbox
+                          checked={checked}
+                          onCheckedChange={(v) => {
+                            const next = new Set(selectedImportChapters);
+                            if (v) next.add(idx); else next.delete(idx);
+                            setSelectedImportChapters(next);
+                          }}
+                          className="mt-0.5"
+                        />
+                        <span className="text-sm">
+                          {ch.section_number && <span className="text-muted-foreground mr-1 font-mono text-xs">{ch.section_number}</span>}
+                          <span className={ch.level === 1 ? "font-medium" : ""}>{ch.title}</span>
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </ScrollArea>
+              <div className="flex justify-end gap-2 pt-2 border-t">
+                <Button variant="outline" onClick={() => setShowTocImportDialog(false)}>取消</Button>
+                <Button
+                  disabled={importingToc || selectedImportChapters.size === 0}
+                  onClick={() => handleImportToc(selectedImportSource, selectedImportChapters)}
+                >
+                  {importingToc ? (
+                    <><Loader2 className="w-4 h-4 mr-1 animate-spin" />导入中...</>
+                  ) : (
+                    <>确认导入 ({selectedImportChapters.size} 个章节)</>
+                  )}
+                </Button>
+              </div>
+            </>
           )}
         </DialogContent>
       </Dialog>
