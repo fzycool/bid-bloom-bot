@@ -278,6 +278,7 @@ export default function MaterialExtractor({ open, onOpenChange, onComplete }: Pr
 
       setChapters(mapped);
       setSelected(new Set(mapped.map((_, i) => i)));
+      setProjectPrefix(extractProjectName(file.name));
       setStep("select");
     } catch (err: any) {
       toast({ title: "分析失败", description: err.message, variant: "destructive" });
@@ -387,6 +388,41 @@ export default function MaterialExtractor({ open, onOpenChange, onComplete }: Pr
   };
 
   const fmtSize = (s: string) => { const n = s.length; return n > 1000 ? `${(n / 1000).toFixed(1)}K字` : `${n}字`; };
+
+  /** Extract a clean project name from raw filename */
+  const extractProjectName = (raw: string): string => {
+    let name = raw.replace(/\.docx$/i, "");
+
+    // Extract date: 20230908 or 2023-09-08 or 2023.09.08
+    let year = "", month = "";
+    const dateMatch = name.match(/(\d{4})[-.]?(\d{2})[-.]?(\d{2})/);
+    if (dateMatch) {
+      year = dateMatch[1];
+      month = dateMatch[2];
+    }
+
+    // Remove date patterns
+    name = name.replace(/[-_ ]*\d{4}[-.]?\d{2}[-.]?\d{2}[-_ ]*/g, "");
+
+    // Remove common prefixes
+    name = name.replace(/^(投标文件|招标文件|技术方案|商务标|技术标)[-_—–\s]*/g, "");
+
+    // Remove common suffixes and noise
+    name = name
+      .replace(/[-_—–\s]*(修订版|最终版|终稿|定稿|正式版|final|v\d+).*$/gi, "")
+      .replace(/\(\d+\)/g, "")        // (1), (2)
+      .replace(/（\d+）/g, "")         // （1）
+      .replace(/[-_\s]+$/g, "")        // trailing separators
+      .replace(/^[-_\s]+/g, "")        // leading separators
+      .trim();
+
+    // Remove redundant "投标文件" within the name
+    name = name.replace(/投标文件/g, "").trim();
+
+    // Build final name with date prefix
+    const datePart = year && month ? `${year}年${month}月` : "";
+    return datePart ? `${datePart}${name}` : name || raw.replace(/\.docx$/i, "");
+  };
 
   // ── render ──
   return (
