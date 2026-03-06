@@ -6,13 +6,14 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
+import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Loader2, Upload, FileText, Check, Sparkles } from "lucide-react";
+import { Loader2, Upload, FileText, Check, Sparkles, Wrench, Users } from "lucide-react";
 import JSZip from "jszip";
 
 // ─── DOCX XML helpers ─────────────────────────────────────────────
@@ -215,6 +216,7 @@ export default function MaterialExtractor({ open, onOpenChange, onComplete }: Pr
   const [fileName, setFileName] = useState("");
   const [projectPrefix, setProjectPrefix] = useState("");
   const [analyzePhase, setAnalyzePhase] = useState<"uploading" | "ai" | "parsing">("uploading");
+  const [projectCategory, setProjectCategory] = useState<"技术交付类" | "人力资源类" | "">("");
 
   const reset = () => {
     setStep("upload");
@@ -224,6 +226,7 @@ export default function MaterialExtractor({ open, onOpenChange, onComplete }: Pr
     setFileName("");
     setProjectPrefix("");
     setAnalyzePhase("uploading");
+    setProjectCategory("");
     parsedRef.current = null;
     zipRef.current = null;
   };
@@ -317,6 +320,36 @@ export default function MaterialExtractor({ open, onOpenChange, onComplete }: Pr
     setProgress({ current: 0, total: sel.length });
 
     const prefix = projectPrefix.trim() ? `${projectPrefix.trim()}_` : "";
+    const projectName = projectPrefix.trim() || fileName.replace(/\.docx$/i, "");
+
+    // Create a bid_analysis record to group extracted materials
+    // Store TOC structure (all chapters, not just selected) and category
+    const tocStructure = chapters.map(ch => ({
+      section_number: ch.section_number,
+      title: ch.title,
+      level: ch.level,
+    }));
+
+    const { data: analysis, error: analysisErr } = await supabase
+      .from("bid_analyses")
+      .insert({
+        user_id: user.id,
+        project_name: projectName,
+        ai_status: "completed",
+        project_category: projectCategory || null,
+        document_structure: tocStructure,
+        summary: `从「${fileName}」提取，共${chapters.length}个章节`,
+      } as any)
+      .select("id")
+      .single();
+
+    if (analysisErr || !analysis) {
+      toast({ title: "创建项目失败", description: analysisErr?.message, variant: "destructive" });
+      setStep("select");
+      return;
+    }
+
+    const analysisId = (analysis as any).id;
 
     for (let i = 0; i < sel.length; i++) {
       const ch = sel[i];
@@ -340,6 +373,7 @@ export default function MaterialExtractor({ open, onOpenChange, onComplete }: Pr
           ai_status: "completed",
           content_description: `从「${fileName}」提取的章节内容`,
           material_type: "标书章节",
+          bid_analysis_id: analysisId,
         });
       } catch (err: any) {
         console.error(`Save chapter ${ch.section_number} error:`, err);
@@ -348,7 +382,7 @@ export default function MaterialExtractor({ open, onOpenChange, onComplete }: Pr
     }
 
     setStep("done");
-    toast({ title: "提取完成", description: `成功保存${sel.length}个章节` });
+    toast({ title: "提取完成", description: `成功保存${sel.length}个章节到项目「${projectName}」` });
     onComplete();
   };
 
@@ -409,14 +443,35 @@ export default function MaterialExtractor({ open, onOpenChange, onComplete }: Pr
 
         {step === "select" && (
           <div className="space-y-4">
-            <div className="flex items-center gap-2">
-              <label className="text-sm text-muted-foreground whitespace-nowrap">项目简称</label>
-              <Input
-                value={projectPrefix}
-                onChange={(e) => setProjectPrefix(e.target.value)}
-                placeholder="如：XX市政工程"
-                className="max-w-xs"
-              />
+            <div className="flex items-center gap-3 flex-wrap">
+              <div className="flex items-center gap-2 flex-1 min-w-[200px]">
+                <label className="text-sm text-muted-foreground whitespace-nowrap">项目简称</label>
+                <Input
+                  value={projectPrefix}
+                  onChange={(e) => setProjectPrefix(e.target.value)}
+                  placeholder="如：XX市政工程"
+                  className="max-w-xs"
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <label className="text-sm text-muted-foreground whitespace-nowrap">项目类型</label>
+                <div className="flex gap-1.5">
+                  <Badge
+                    variant={projectCategory === "技术交付类" ? "default" : "outline"}
+                    className={`cursor-pointer transition-colors ${projectCategory === "技术交付类" ? "bg-blue-600 hover:bg-blue-700 text-white" : "hover:bg-blue-50 dark:hover:bg-blue-950"}`}
+                    onClick={() => setProjectCategory(projectCategory === "技术交付类" ? "" : "技术交付类")}
+                  >
+                    <Wrench className="w-3 h-3 mr-1" />技术交付类
+                  </Badge>
+                  <Badge
+                    variant={projectCategory === "人力资源类" ? "default" : "outline"}
+                    className={`cursor-pointer transition-colors ${projectCategory === "人力资源类" ? "bg-emerald-600 hover:bg-emerald-700 text-white" : "hover:bg-emerald-50 dark:hover:bg-emerald-950"}`}
+                    onClick={() => setProjectCategory(projectCategory === "人力资源类" ? "" : "人力资源类")}
+                  >
+                    <Users className="w-3 h-3 mr-1" />人力资源类
+                  </Badge>
+                </div>
+              </div>
             </div>
             <div className="flex items-center justify-between">
               <p className="text-sm text-muted-foreground">

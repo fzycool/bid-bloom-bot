@@ -81,6 +81,7 @@ export type Database = {
           file_path: string | null
           id: string
           personnel_requirements: Json | null
+          project_category: string | null
           project_name: string | null
           requires_presentation: boolean | null
           responsibility_keywords: Json | null
@@ -109,6 +110,7 @@ export type Database = {
           file_path?: string | null
           id?: string
           personnel_requirements?: Json | null
+          project_category?: string | null
           project_name?: string | null
           requires_presentation?: boolean | null
           responsibility_keywords?: Json | null
@@ -137,6 +139,7 @@ export type Database = {
           file_path?: string | null
           id?: string
           personnel_requirements?: Json | null
+          project_category?: string | null
           project_name?: string | null
           requires_presentation?: boolean | null
           responsibility_keywords?: Json | null

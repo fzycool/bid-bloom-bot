@@ -11,6 +11,11 @@ import {
   Briefcase,
   Trash2,
   FileText,
+  Wrench,
+  Users,
+  ChevronDown,
+  ChevronRight,
+  List,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
@@ -32,6 +37,8 @@ interface ProjectGroup {
   id: string | null; // null = 通用材料
   name: string;
   materialCount: number;
+  category?: string | null;
+  documentStructure?: any[] | null;
 }
 
 export default function CompanyMaterials() {
@@ -42,6 +49,7 @@ export default function CompanyMaterials() {
   const [selectedProject, setSelectedProject] = useState<ProjectGroup | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [extractorOpen, setExtractorOpen] = useState(false);
+  const [expandedToc, setExpandedToc] = useState<string | null>(null);
 
   const fetchProjects = useCallback(async () => {
     if (!user) return;
@@ -81,7 +89,7 @@ export default function CompanyMaterials() {
     // Also fetch all user's bid_analyses to show empty projects too
     const { data: allAnalyses } = await supabase
       .from("bid_analyses")
-      .select("id, project_name")
+      .select("id, project_name, project_category, document_structure")
       .order("created_at", { ascending: false });
 
     const groups: ProjectGroup[] = [];
@@ -96,8 +104,10 @@ export default function CompanyMaterials() {
       addedIds.add(a.id);
       groups.push({
         id: a.id,
-        name: a.project_name || "未命名项目",
+        name: (a as any).project_name || "未命名项目",
         materialCount: countMap.get(a.id) || 0,
+        category: (a as any).project_category || null,
+        documentStructure: (a as any).document_structure || null,
       });
     }
 
@@ -198,12 +208,47 @@ export default function CompanyMaterials() {
                       <h3 className="font-semibold text-foreground truncate group-hover:text-accent transition-colors">
                         {project.name}
                       </h3>
-                      <div className="flex items-center gap-2 mt-1.5">
+                      <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                         <Badge variant="secondary" className="text-xs">
                           <ImageIcon className="w-3 h-3 mr-1" />
                           {project.materialCount} 个材料
                         </Badge>
+                        {project.category === "技术交付类" && (
+                          <Badge className="text-xs bg-blue-600 text-white hover:bg-blue-700">
+                            <Wrench className="w-3 h-3 mr-1" />技术交付类
+                          </Badge>
+                        )}
+                        {project.category === "人力资源类" && (
+                          <Badge className="text-xs bg-emerald-600 text-white hover:bg-emerald-700">
+                            <Users className="w-3 h-3 mr-1" />人力资源类
+                          </Badge>
+                        )}
+                        {project.documentStructure && Array.isArray(project.documentStructure) && project.documentStructure.length > 0 && (
+                          <Badge
+                            variant="outline"
+                            className="text-xs cursor-pointer hover:bg-muted"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setExpandedToc(expandedToc === project.id ? null : project.id);
+                            }}
+                          >
+                            <List className="w-3 h-3 mr-1" />
+                            目录 ({project.documentStructure.length})
+                            {expandedToc === project.id ? <ChevronDown className="w-3 h-3 ml-1" /> : <ChevronRight className="w-3 h-3 ml-1" />}
+                          </Badge>
+                        )}
                       </div>
+                      {/* Inline TOC display */}
+                      {expandedToc === project.id && project.documentStructure && (
+                        <div className="mt-2 max-h-48 overflow-y-auto border rounded-md bg-muted/30 p-2 text-xs space-y-0.5" onClick={(e) => e.stopPropagation()}>
+                          {(project.documentStructure as any[]).map((ch: any, idx: number) => (
+                            <div key={idx} style={{ paddingLeft: `${((ch.level || 1) - 1) * 16}px` }} className="text-muted-foreground">
+                              <span className="text-foreground/50 mr-1">{ch.section_number}</span>
+                              <span className={ch.level === 1 ? "font-medium text-foreground" : ""}>{ch.title}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     {!isGeneral && (
                       <AlertDialog>
