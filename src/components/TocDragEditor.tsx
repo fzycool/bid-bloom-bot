@@ -62,6 +62,7 @@ interface TocDragEditorProps {
   onRenameEntry: (id: string, title: string, type: "section" | "toc") => void;
   onDeleteEntry: (id: string, type: "section" | "toc") => void;
   onAutoNumber?: (items: { id: string; section_number: string; type: "section" | "toc" }[]) => void;
+  onLevelChange?: (id: string, type: "section" | "toc", direction: "promote" | "demote") => void;
 }
 
 export default function TocDragEditor({
