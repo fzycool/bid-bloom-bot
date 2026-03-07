@@ -333,11 +333,19 @@ export default function TocDragEditor({
 
   return (
     <div className="space-y-0.5">
-      {onAutoNumber && (
-        <div className="flex justify-end mb-2">
-          <Button size="sm" variant="outline" onClick={handleAutoNumber}>
-            <ListOrdered className="w-3.5 h-3.5 mr-1" />自动编号
-          </Button>
+      {(onAutoNumber || onAutoOrganize) && (
+        <div className="flex justify-end gap-1.5 mb-2">
+          {onAutoOrganize && (
+            <Button size="sm" variant="outline" onClick={onAutoOrganize} disabled={isOrganizing}>
+              {isOrganizing ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Wand2 className="w-3.5 h-3.5 mr-1" />}
+              {isOrganizing ? "整理中..." : "自动整理"}
+            </Button>
+          )}
+          {onAutoNumber && (
+            <Button size="sm" variant="outline" onClick={handleAutoNumber}>
+              <ListOrdered className="w-3.5 h-3.5 mr-1" />自动编号
+            </Button>
+          )}
         </div>
       )}
       {flatItems.map((item) => {
