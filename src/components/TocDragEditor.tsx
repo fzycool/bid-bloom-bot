@@ -51,7 +51,7 @@ interface TocDragEditorProps {
 
 export default function TocDragEditor({
   sections,
-  tocEntries,
+  tocEntries: externalTocEntries,
   expandedSections,
   onToggle,
   onReorder,
@@ -64,6 +64,16 @@ export default function TocDragEditor({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState("");
   const editRef = useRef<HTMLInputElement>(null);
+
+  // Local optimistic state for toc entries
+  const [localTocEntries, setLocalTocEntries] = useState<TocEntry[]>(externalTocEntries);
+  
+  // Sync from props when external data changes (e.g. after refetch)
+  React.useEffect(() => {
+    setLocalTocEntries(externalTocEntries);
+  }, [externalTocEntries]);
+
+  const tocEntries = localTocEntries;
 
   // Build TOC map by parent
   const tocByParent = new Map<string, TocEntry[]>();
