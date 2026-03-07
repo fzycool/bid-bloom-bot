@@ -647,9 +647,45 @@ c) 字体：有明确要求的按要求执行，没有明确要求按文档模�
     if (!selectedProposal || !filteredToc.length) return;
     setImportingToc(true);
     try {
+      // Collect all existing outline section titles for deduplication
+      const collectTitles = (nodes: ProposalSection[]): string[] => {
+        const titles: string[] = [];
+        for (const n of nodes) {
+          titles.push(n.title.trim().replace(/\s+/g, ''));
+          if (n.children) titles.push(...collectTitles(n.children));
+        }
+        return titles;
+      };
+      const outlineTitles = new Set(collectTitles(sections).map(t => t.toLowerCase()));
+
+      // Helper: check if an imported title is similar to any existing outline title
+      const isSimilar = (importedTitle: string): boolean => {
+        const normalized = importedTitle.trim().replace(/\s+/g, '').toLowerCase();
+        if (!normalized) return false;
+        for (const ot of outlineTitles) {
+          if (ot === normalized) return true;
+          // Containment check (one contains the other)
+          if (ot.length >= 3 && normalized.length >= 3) {
+            if (ot.includes(normalized) || normalized.includes(ot)) return true;
+          }
+        }
+        return false;
+      };
+
+      // Filter out chapters that conflict with existing outline
+      const dedupedToc = filteredToc.filter((ch: any) => !isSimilar(ch.title));
+      const skippedCount = filteredToc.length - dedupedToc.length;
+
+      if (dedupedToc.length === 0) {
+        toast({ title: "导入完成", description: `所有 ${filteredToc.length} 个章节与现有提纲重复，已全部跳过` });
+        setShowTocImportDialog(false);
+        setImportingToc(false);
+        return;
+      }
+
       // For hierarchical import: group by level
-      const level1 = filteredToc.filter((ch: any) => (ch.level || 1) === 1);
-      const level2Plus = filteredToc.filter((ch: any) => (ch.level || 1) > 1);
+      const level1 = dedupedToc.filter((ch: any) => (ch.level || 1) === 1);
+      const level2Plus = dedupedToc.filter((ch: any) => (ch.level || 1) > 1);
 
       // Insert level-1 sections
       const level1Inserts = level1.map((ch: any, idx: number) => ({
@@ -716,7 +752,10 @@ c) 字体：有明确要求的按要求执行，没有明确要求按文档模�
       setTocStatus("completed");
       setTocProgress(null);
 
-      toast({ title: "导入成功", description: `已从「${source.name}」导入 ${filteredToc.length} 个章节` });
+      const desc = skippedCount > 0
+        ? `已导入 ${dedupedToc.length} 个章节，跳过 ${skippedCount} 个与提纲重复的章节`
+        : `已从「${source.name}」导入 ${dedupedToc.length} 个章节`;
+      toast({ title: "导入成功", description: desc });
       setShowTocImportDialog(false);
       fetchProposalDetails(selectedProposal.id);
     } catch (e: any) {
