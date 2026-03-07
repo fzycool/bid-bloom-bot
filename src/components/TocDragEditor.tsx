@@ -128,7 +128,7 @@ export default function TocDragEditor({
       });
     }
   };
-  sections.forEach((s) => flattenSection(s, 0));
+  localSections.forEach((s) => flattenSection(s, 0));
 
   const handleDragStart = useCallback((e: React.DragEvent, id: string) => {
     setDragId(id);
