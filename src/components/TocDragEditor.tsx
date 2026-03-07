@@ -95,10 +95,10 @@ export default function TocDragEditor({
     tocByParent.get(pid)!.push(e);
   });
 
-  // Flatten tree for rendering
+  // Flatten tree for rendering (always sort by sort_order)
   const flatItems: FlatItem[] = [];
   const flattenSection = (section: SectionNode, depth: number) => {
-    const tocChildren = tocByParent.get(section.id) || [];
+    const tocChildren = (tocByParent.get(section.id) || []).sort((a, b) => a.sort_order - b.sort_order);
     const hasChildren = (section.children && section.children.length > 0) || tocChildren.length > 0;
     flatItems.push({
       id: section.id,
@@ -111,7 +111,8 @@ export default function TocDragEditor({
       hasChildren,
     });
     if (expandedSections.has(section.id)) {
-      section.children?.forEach((child) => flattenSection(child, depth + 1));
+      const sortedChildren = [...(section.children || [])].sort((a, b) => a.sort_order - b.sort_order);
+      sortedChildren.forEach((child) => flattenSection(child, depth + 1));
       tocChildren.forEach((toc) => {
         flatItems.push({
           id: toc.id,
@@ -128,7 +129,8 @@ export default function TocDragEditor({
       });
     }
   };
-  localSections.forEach((s) => flattenSection(s, 0));
+  // Sort root sections by sort_order
+  [...localSections].sort((a, b) => a.sort_order - b.sort_order).forEach((s) => flattenSection(s, 0));
 
   const handleDragStart = useCallback((e: React.DragEvent, id: string) => {
     setDragId(id);
