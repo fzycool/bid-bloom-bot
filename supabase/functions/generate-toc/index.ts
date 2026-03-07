@@ -298,11 +298,16 @@ async function generateToc(supabase: any, proposalId: string, resume = false) {
 
         // Check if RAGPlus returned "no answer"
         if (rawAnswer.includes(NO_ANSWER_MARKER)) {
-          console.log(`Section "${leaf.title}" has no KB match, marking as no sub-sections`);
-          // Just mark on section for resume tracking, no TOC entries needed
-          await supabase.from("proposal_sections").update({
-            content: "[无知识库匹配] 该章节在知识库中未找到相关内容，默认无子章节。",
-          }).eq("id", leaf.id);
+          console.log(`Section "${leaf.title}" has no KB match, inserting marker TOC entry`);
+          // Insert a marker TOC entry for resume tracking (never touch proposal_sections)
+          await supabase.from("proposal_toc_entries").insert({
+            proposal_id: proposalId,
+            parent_section_id: leaf.id,
+            title: "__NO_KB_MATCH__",
+            content: "该章节在知识库中未找到相关内容，默认无子章节。",
+            section_number: leaf.section_number || "",
+            sort_order: leaf.sort_order * 100,
+          });
         } else {
           // Use AI to summarize into sub-section titles + notes
           await supabase.from("bid_proposals").update({
