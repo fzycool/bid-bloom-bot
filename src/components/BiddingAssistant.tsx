@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/dialog";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { Checkbox } from "@/components/ui/checkbox";
+import TocDragEditor from "@/components/TocDragEditor";
 import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType, Header, Footer, LevelFormat, convertInchesToTwip, LevelSuffix } from "docx";
 import { saveAs } from "file-saver";
 import JSZip from "jszip";
