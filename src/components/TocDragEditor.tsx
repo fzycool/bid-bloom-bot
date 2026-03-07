@@ -72,13 +72,18 @@ export default function TocDragEditor({
   const [editTitle, setEditTitle] = useState("");
   const editRef = useRef<HTMLInputElement>(null);
 
-  // Local optimistic state for toc entries
+  // Local optimistic state
   const [localTocEntries, setLocalTocEntries] = useState<TocEntry[]>(externalTocEntries);
+  const [localSections, setLocalSections] = useState<SectionNode[]>(sections);
   
   // Sync from props when external data changes (e.g. after refetch)
   React.useEffect(() => {
     setLocalTocEntries(externalTocEntries);
   }, [externalTocEntries]);
+  
+  React.useEffect(() => {
+    setLocalSections(sections);
+  }, [sections]);
 
   const tocEntries = localTocEntries;
 
