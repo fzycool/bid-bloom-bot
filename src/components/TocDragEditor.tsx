@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback } from "react";
-import { GripVertical, ChevronRight, ChevronDown, Pencil, Trash2, Check, X, ListOrdered, ArrowUpRight, ArrowDownRight } from "lucide-react";
+import { GripVertical, ChevronRight, ChevronDown, Pencil, Trash2, Check, X, ListOrdered, ArrowUpRight, ArrowDownRight, Wand2, Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -63,6 +63,8 @@ interface TocDragEditorProps {
   onDeleteEntry: (id: string, type: "section" | "toc") => void;
   onAutoNumber?: (items: { id: string; section_number: string; type: "section" | "toc" }[]) => void;
   onLevelChange?: (id: string, type: "section" | "toc", direction: "promote" | "demote") => void;
+  onAutoOrganize?: () => Promise<void>;
+  isOrganizing?: boolean;
 }
 
 export default function TocDragEditor({
@@ -75,6 +77,8 @@ export default function TocDragEditor({
   onDeleteEntry,
   onAutoNumber,
   onLevelChange,
+  onAutoOrganize,
+  isOrganizing,
 }: TocDragEditorProps) {
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   const [dropPosition, setDropPosition] = useState<DropPosition | null>(null);
@@ -329,11 +333,19 @@ export default function TocDragEditor({
 
   return (
     <div className="space-y-0.5">
-      {onAutoNumber && (
-        <div className="flex justify-end mb-2">
-          <Button size="sm" variant="outline" onClick={handleAutoNumber}>
-            <ListOrdered className="w-3.5 h-3.5 mr-1" />自动编号
-          </Button>
+      {(onAutoNumber || onAutoOrganize) && (
+        <div className="flex justify-end gap-1.5 mb-2">
+          {onAutoOrganize && (
+            <Button size="sm" variant="outline" onClick={onAutoOrganize} disabled={isOrganizing}>
+              {isOrganizing ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Wand2 className="w-3.5 h-3.5 mr-1" />}
+              {isOrganizing ? "整理中..." : "自动整理"}
+            </Button>
+          )}
+          {onAutoNumber && (
+            <Button size="sm" variant="outline" onClick={handleAutoNumber}>
+              <ListOrdered className="w-3.5 h-3.5 mr-1" />自动编号
+            </Button>
+          )}
         </div>
       )}
       {flatItems.map((item) => {
