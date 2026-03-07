@@ -347,6 +347,7 @@ export default function BiddingAssistant() {
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [selectedProposal, setSelectedProposal] = useState<Proposal | null>(null);
   const [sections, setSections] = useState<ProposalSection[]>([]);
+  const [tocSections, setTocSections] = useState<ProposalSection[]>([]);
   const [tocEntries, setTocEntries] = useState<TocEntry[]>([]);
   const [materials, setMaterials] = useState<ProposalMaterial[]>([]);
 
