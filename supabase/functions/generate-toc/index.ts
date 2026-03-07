@@ -269,8 +269,12 @@ async function generateToc(supabase: any, proposalId: string, resume = false) {
           completed++;
           continue;
         }
-        // Also skip if marked as no match
-        if (leaf.content && (leaf.content.startsWith("[无知识库匹配]"))) {
+        // Also skip if marked as no match (stored as a special TOC entry)
+        const { count: noMatchCount } = await supabase.from("proposal_toc_entries")
+          .select("id", { count: "exact", head: true })
+          .eq("parent_section_id", leaf.id)
+          .eq("title", "__NO_KB_MATCH__");
+        if (noMatchCount && noMatchCount > 0) {
           completed++;
           continue;
         }
