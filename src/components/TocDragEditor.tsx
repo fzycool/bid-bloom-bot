@@ -227,33 +227,34 @@ export default function TocDragEditor({
       reordered.push({ id: sourceId, sort_order: order, parent_id: newParentId, type: source.type });
     }
 
-    // Optimistically update local sections state
+    // Optimistically update local sections - use a flat map of sort_order updates
+    const reorderMap = new Map(reordered.map(r => [r.id, r]));
+    
     setLocalSections((prev) => {
-      const updateNode = (nodes: SectionNode[]): SectionNode[] => {
+      const updateNodes = (nodes: SectionNode[]): SectionNode[] => {
         return nodes.map((node) => {
-          const item = reordered.find((r) => r.id === node.id);
-          const updated = item
-            ? { ...node, sort_order: item.sort_order, parent_id: item.parent_id }
-            : node;
-          return {
-            ...updated,
-            children: updated.children ? updateNode(updated.children) : undefined,
-          };
-        }).sort((a, b) => a.sort_order - b.sort_order);
+          const update = reorderMap.get(node.id);
+          const newNode = update
+            ? { ...node, sort_order: update.sort_order, parent_id: update.parent_id }
+            : { ...node };
+          if (node.children) {
+            newNode.children = updateNodes(node.children);
+          }
+          return newNode;
+        });
       };
-      return updateNode(prev);
+      return updateNodes(prev);
     });
 
-    // Optimistically update local toc entries state
-    setLocalTocEntries((prev) => {
-      return prev.map((entry) => {
-        const item = reordered.find((r) => r.id === entry.id);
-        if (item) {
-          return { ...entry, sort_order: item.sort_order, parent_section_id: item.parent_id };
-        }
-        return entry;
-      });
-    });
+    // Optimistically update local toc entries
+    setLocalTocEntries((prev) =>
+      prev.map((entry) => {
+        const update = reorderMap.get(entry.id);
+        return update
+          ? { ...entry, sort_order: update.sort_order, parent_section_id: update.parent_id }
+          : entry;
+      })
+    );
 
     onReorder(reordered);
     setDragId(null);
