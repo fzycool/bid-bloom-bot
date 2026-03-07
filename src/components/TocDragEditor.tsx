@@ -54,6 +54,7 @@ interface TocDragEditorProps {
   onReorder: (items: ReorderItem[]) => void;
   onRenameEntry: (id: string, title: string, type: "section" | "toc") => void;
   onDeleteEntry: (id: string, type: "section" | "toc") => void;
+  onAutoNumber?: (items: { id: string; section_number: string; type: "section" | "toc" }[]) => void;
 }
 
 export default function TocDragEditor({
