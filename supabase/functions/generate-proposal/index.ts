@@ -100,7 +100,7 @@ async function generateOneSection(supabase: any, opts: {
 
   // Check pause/cancel
   const { data: proposalCheck } = await supabase.from("bid_proposals")
-    .select("proposal_doc_status").eq("id", proposalId).single();
+    .select("proposal_doc_status").eq("id", proposalId).maybeSingle();
   if (!proposalCheck) return { status: "cancelled" };
   if (proposalCheck.proposal_doc_status === "paused") return { status: "paused" };
   if (proposalCheck.proposal_doc_status === "cancelled" || proposalCheck.proposal_doc_status === "pending") {
@@ -109,7 +109,7 @@ async function generateOneSection(supabase: any, opts: {
 
   // Load all needed data
   const { data: proposal } = await supabase.from("bid_proposals")
-    .select("*, bid_analyses(*)").eq("id", proposalId).single();
+    .select("*, bid_analyses(*)").eq("id", proposalId).maybeSingle();
   const bid = proposal?.bid_analyses;
 
   const [{ data: allSections }, { data: tocEntries }, { data: materials }, { data: companyMaterials }, { data: docs }, { data: employees }] = await Promise.all([
