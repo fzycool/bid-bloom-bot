@@ -52,9 +52,14 @@ serve(async (req) => {
 
 // ─── INIT: return root sections that need generation ───
 async function handleInit(supabase: any, proposalId: string, corsHeaders: Record<string, string>) {
-  const { data: proposal } = await supabase.from("bid_proposals")
+  console.log("handleInit called for proposalId:", proposalId);
+  const { data: proposal, error: pErr } = await supabase.from("bid_proposals")
     .select("*, bid_analyses(*)")
-    .eq("id", proposalId).single();
+    .eq("id", proposalId).maybeSingle();
+  if (pErr) {
+    console.error("Failed to load proposal:", pErr);
+    throw new Error("加载投标方案失败: " + pErr.message);
+  }
   if (!proposal) throw new Error("投标方案不存在");
 
   await supabase.from("bid_proposals").update({
@@ -62,11 +67,14 @@ async function handleInit(supabase: any, proposalId: string, corsHeaders: Record
     proposal_doc_progress: "正在准备数据...",
   }).eq("id", proposalId);
 
-  const { data: sections } = await supabase.from("proposal_sections")
+  const { data: sections, error: sErr } = await supabase.from("proposal_sections")
     .select("id, title, section_number, parent_id, content, sort_order")
     .eq("proposal_id", proposalId).order("sort_order");
+  
+  console.log("Sections loaded:", sections?.length, "error:", sErr);
 
   const roots = (sections || []).filter((s: any) => !s.parent_id);
+  console.log("Root sections found:", roots.length);
 
   // Return list of root section IDs so client can call one by one
   return new Response(JSON.stringify({
@@ -92,7 +100,7 @@ async function generateOneSection(supabase: any, opts: {
 
   // Check pause/cancel
   const { data: proposalCheck } = await supabase.from("bid_proposals")
-    .select("proposal_doc_status").eq("id", proposalId).single();
+    .select("proposal_doc_status").eq("id", proposalId).maybeSingle();
   if (!proposalCheck) return { status: "cancelled" };
   if (proposalCheck.proposal_doc_status === "paused") return { status: "paused" };
   if (proposalCheck.proposal_doc_status === "cancelled" || proposalCheck.proposal_doc_status === "pending") {
@@ -101,7 +109,7 @@ async function generateOneSection(supabase: any, opts: {
 
   // Load all needed data
   const { data: proposal } = await supabase.from("bid_proposals")
-    .select("*, bid_analyses(*)").eq("id", proposalId).single();
+    .select("*, bid_analyses(*)").eq("id", proposalId).maybeSingle();
   const bid = proposal?.bid_analyses;
 
   const [{ data: allSections }, { data: tocEntries }, { data: materials }, { data: companyMaterials }, { data: docs }, { data: employees }] = await Promise.all([
