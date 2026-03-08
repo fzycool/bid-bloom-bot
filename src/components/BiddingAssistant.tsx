@@ -1059,14 +1059,98 @@ c) 字体：有明确要求的按要求执行，没有明确要求按文档模�
     setActiveTab("proposal");
     setWorkspaceMode(true);
     try {
-      const { error } = await supabase.functions.invoke("generate-proposal", {
-        body: { proposalId: selectedProposal.id, resume },
+      // Step 1: Init — get list of root sections
+      const { data: initData, error: initError } = await supabase.functions.invoke("generate-proposal", {
+        body: { proposalId: selectedProposal.id },
       });
-      if (error) throw error;
+      if (initError) throw initError;
+      const sectionsToGenerate = initData?.sections || [];
+      const total = sectionsToGenerate.length;
+      if (total === 0) throw new Error("没有找到需要生成的章节");
+
+      // Step 2: Generate each section one by one
+      for (let i = 0; i < total; i++) {
+        const sec = sectionsToGenerate[i];
+
+        // Skip sections that already have content when resuming
+        if (resume && sec.hasContent) {
+          setDocProgress(`跳过已完成章节: ${sec.section_number || ""} ${sec.title} (${i + 1}/${total})`);
+          continue;
+        }
+
+        // Check if paused/cancelled before each call
+        const { data: statusCheck } = await supabase.from("bid_proposals")
+          .select("proposal_doc_status").eq("id", selectedProposal.id).single();
+        if (statusCheck?.proposal_doc_status === "paused") {
+          setDocStatus("paused");
+          setDocProgress(`已暂停 (已完成 ${i}/${total} 个章节)`);
+          await supabase.from("bid_proposals").update({
+            proposal_doc_progress: `已暂停 (已完成 ${i}/${total} 个章节)`,
+          }).eq("id", selectedProposal.id);
+          return;
+        }
+        if (statusCheck?.proposal_doc_status === "cancelled" || statusCheck?.proposal_doc_status === "pending") {
+          // Clean up
+          await supabase.from("proposal_sections").update({ content: null }).eq("proposal_id", selectedProposal.id);
+          await supabase.from("bid_proposals").update({
+            proposal_doc_status: "pending", proposal_doc_progress: null,
+          }).eq("id", selectedProposal.id);
+          setDocStatus("pending");
+          setDocProgress(null);
+          fetchProposalDetails(selectedProposal.id);
+          return;
+        }
+
+        setDocProgress(`正在编写: ${sec.section_number || ""} ${sec.title} (${i + 1}/${total})`);
+        await supabase.from("bid_proposals").update({
+          proposal_doc_progress: `正在编写: ${sec.section_number || ""} ${sec.title} (${i + 1}/${total})`,
+        }).eq("id", selectedProposal.id);
+
+        const { data: result, error: secError } = await supabase.functions.invoke("generate-proposal", {
+          body: { proposalId: selectedProposal.id, sectionId: sec.id },
+        });
+
+        if (secError) {
+          console.error(`Section ${sec.section_number} failed:`, secError);
+          // Continue with next section instead of stopping entirely
+          continue;
+        }
+
+        if (result?.status === "paused") {
+          setDocStatus("paused");
+          setDocProgress(`已暂停 (已完成 ${i}/${total} 个章节)`);
+          return;
+        }
+        if (result?.status === "cancelled") {
+          setDocStatus("pending");
+          setDocProgress(null);
+          fetchProposalDetails(selectedProposal.id);
+          return;
+        }
+
+        // Brief delay between sections to avoid rate limiting
+        if (i < total - 1) {
+          await new Promise(r => setTimeout(r, 1500));
+        }
+      }
+
+      // All done
+      await supabase.from("bid_proposals").update({
+        proposal_doc_status: "completed",
+        proposal_doc_progress: null,
+      }).eq("id", selectedProposal.id);
+      setDocStatus("completed");
+      setDocProgress(null);
+      fetchProposalDetails(selectedProposal.id);
+      toast({ title: "编写完成", description: "标书文档已全部生成" });
     } catch (e: any) {
       toast({ title: "生成失败", description: e.message, variant: "destructive" });
       setDocStatus("failed");
       setDocProgress(e.message);
+      await supabase.from("bid_proposals").update({
+        proposal_doc_status: "failed",
+        proposal_doc_progress: e.message,
+      }).eq("id", selectedProposal.id);
     } finally {
       setGeneratingDoc(false);
     }
