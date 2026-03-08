@@ -35,17 +35,23 @@ serve(async (req) => {
     }).eq("id", proposalId);
 
     // Do heavy work in background
-    (globalThis as any).EdgeRuntime?.waitUntil?.(
-      generateProposalDoc(supabase, {
-        proposalId, aiUrl, aiModel, aiKey, isLovable, maxTokens: configMaxTokens,
-      }).catch(async (error: any) => {
-        console.error("generate-proposal background error:", error);
-        await supabase.from("bid_proposals").update({
-          proposal_doc_status: "failed",
-          proposal_doc_progress: error.message || "生成失败",
-        }).eq("id", proposalId);
-      })
-    );
+    const backgroundTask = generateProposalDoc(supabase, {
+      proposalId, aiUrl, aiModel, aiKey, isLovable, maxTokens: configMaxTokens,
+    }).catch(async (error: any) => {
+      console.error("generate-proposal background error:", error);
+      await supabase.from("bid_proposals").update({
+        proposal_doc_status: "failed",
+        proposal_doc_progress: error.message || "生成失败",
+      }).eq("id", proposalId);
+    });
+
+    // Use waitUntil if available, otherwise await directly
+    if ((globalThis as any).EdgeRuntime?.waitUntil) {
+      (globalThis as any).EdgeRuntime.waitUntil(backgroundTask);
+    } else {
+      // Fallback: run inline (may timeout for large proposals)
+      await backgroundTask;
+    }
 
     return new Response(JSON.stringify({ success: true, processing: true }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
