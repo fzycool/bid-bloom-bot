@@ -352,8 +352,10 @@ async function callAI(
 
   console.log(`AI [${model}] status=${resp.status}`);
 
-  if (resp.status === 429) throw new Error("Rate limited, please try again later.");
-  if (resp.status === 402) throw new Error("Payment required, please add credits.");
+  if (resp.status === 429 || resp.status === 402) {
+    console.error(`AI [${model}] returned ${resp.status}, skipping to fallback`);
+    return [];
+  }
   if (!resp.ok) {
     const t = await resp.text();
     console.error("AI error:", resp.status, t.substring(0, 300));
