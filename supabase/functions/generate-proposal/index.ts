@@ -195,9 +195,41 @@ async function generateOneSection(supabase: any, opts: {
   matchedMats.sort((a, b) => b.score - a.score);
   const topMats = matchedMats.slice(0, 3);
 
+  // Download actual file content for top matched materials
+  const materialContents: { fileName: string; content: string; score: number }[] = [];
+  for (const m of topMats) {
+    try {
+      const filePath = m.material.file_path;
+      if (!filePath) continue;
+      const { data: fileData, error: dlErr } = await supabase.storage
+        .from("company-materials")
+        .download(filePath);
+      if (dlErr || !fileData) {
+        console.error(`Failed to download material ${filePath}:`, dlErr);
+        continue;
+      }
+      let textContent = "";
+      const fileName = m.material.file_name || "";
+      if (fileName.endsWith(".docx") || fileName.endsWith(".DOCX")) {
+        textContent = await extractDocxText(fileData);
+      } else {
+        textContent = await fileData.text();
+      }
+      if (textContent && textContent.trim().length > 20) {
+        materialContents.push({ fileName: m.material.file_name, content: textContent.trim(), score: m.score });
+      }
+    } catch (e) {
+      console.error("Error extracting material content:", e);
+    }
+  }
+
   const matchedMaterialsInfo = topMats.length > 0
     ? topMats.map((m, i) => `[材料${i + 1}] 文件名:${m.material.file_name} | 类型:${m.material.material_type || "未分类"} | 描述:${m.material.content_description || "无"} | AI提取:${JSON.stringify((m.material.ai_extracted_info as any)?.summary || "无")} | 匹配度:${(m.score * 100).toFixed(0)}%`).join("\n")
     : "无匹配材料";
+
+  const materialFullContents = materialContents.length > 0
+    ? materialContents.map((mc, i) => `=== 材料原文${i + 1}: ${mc.fileName} (匹配度:${(mc.score * 100).toFixed(0)}%) ===\n${mc.content.substring(0, 15000)}\n=== 材料原文${i + 1}结束 ===`).join("\n\n")
+    : "";
 
   const tocDetail = tocForRoot.length > 0
     ? tocForRoot.map((t: any) => `  ${t.section_number || ""} ${t.title}: ${t.content || "无要求"}`).join("\n")
