@@ -32,7 +32,16 @@ serve(async (req) => {
     }
 
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+    const { data: modelConfig } = await supabase.from("model_config").select("*").eq("is_active", true).maybeSingle();
+    const aiUrl = modelConfig?.base_url || "https://ai.gateway.lovable.dev/v1/chat/completions";
+    const aiModel = modelConfig?.model_name || "google/gemini-2.5-flash";
+    const aiKey = modelConfig?.api_key || LOVABLE_API_KEY;
+    const isLovable = !modelConfig || modelConfig.provider === "lovable";
+    if (!aiKey) throw new Error("No AI API key configured");
 
     // Build compact outline tree text
     const buildOutline = (nodes: any[], depth = 0): string => {
