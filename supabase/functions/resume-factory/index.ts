@@ -707,7 +707,7 @@ ${JSON.stringify(resume.education_history || [], null, 2)}`,
         headers: { Authorization: `Bearer ${aiKey}`, "Content-Type": "application/json" },
         body: JSON.stringify({
           model: aiModel,
-          max_tokens: configMaxTokens,
+          ...(aiModel.startsWith("openai/") || aiModel.includes("gpt-") ? { max_completion_tokens: configMaxTokens } : { max_tokens: configMaxTokens }),
           messages: [
             {
               role: "system",
