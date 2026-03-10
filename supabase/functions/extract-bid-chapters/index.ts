@@ -486,6 +486,7 @@ serve(async (req) => {
       },
     ];
 
+    let lovableAIWorked = false;
     const lovableKey = Deno.env.get("LOVABLE_API_KEY");
     if (lovableKey) {
       // Attempt 1: tool_choice with gemini-2.5-pro (best for complex docs)
@@ -518,6 +519,7 @@ serve(async (req) => {
       if (aiChapters.length > chapters.length) {
         console.log(`AI found ${aiChapters.length} chapters (pre-processing: ${chapters.length}), using AI result`);
         chapters = aiChapters;
+        lovableAIWorked = true;
       }
     }
 
