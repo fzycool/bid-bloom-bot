@@ -620,24 +620,35 @@ ${(employees || []).map((e: any) => `- ${e.name}: ${e.current_position || "未�
   if (result.outline) {
     for (let i = 0; i < result.outline.length; i++) {
       const section = result.outline[i];
+      const parentContent = [
+        section.description || "",
+        section.score_weight ? `\n评分分值: ${section.score_weight}` : "",
+        section.format_requirements ? `\n格式要求: ${section.format_requirements}` : "",
+      ].filter(Boolean).join("");
+      
       const { data: parent } = await supabase.from("proposal_sections").insert({
         proposal_id: proposalId,
         section_number: section.section_number,
         title: section.title,
-        content: section.description || "",
+        content: parentContent,
         sort_order: i,
       }).select("id").single();
 
       if (parent && section.children?.length) {
-        // Batch insert all children at once
-        const childRows = section.children.map((child: any, j: number) => ({
-          proposal_id: proposalId,
-          parent_id: parent.id,
-          section_number: child.section_number,
-          title: child.title,
-          content: `${child.description || ""}\n\n需要材料: ${(child.required_materials || []).join(", ")}\n建议模板: ${child.suggested_template || "无"}`,
-          sort_order: j,
-        }));
+        const childRows = section.children.map((child: any, j: number) => {
+          const parts = [child.description || ""];
+          if (child.required_materials?.length) parts.push(`\n需要材料: ${child.required_materials.join(", ")}`);
+          if (child.suggested_template) parts.push(`建议模板: ${child.suggested_template}`);
+          if (child.format_template_ref) parts.push(`对应投标文件格式: ${child.format_template_ref}`);
+          return {
+            proposal_id: proposalId,
+            parent_id: parent.id,
+            section_number: child.section_number,
+            title: child.title,
+            content: parts.join("\n"),
+            sort_order: j,
+          };
+        });
         await supabase.from("proposal_sections").insert(childRows);
       }
     }
