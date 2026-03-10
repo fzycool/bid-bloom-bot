@@ -523,8 +523,8 @@ serve(async (req) => {
       }
     }
 
-    // ── Step 3: Fallback to custom model_config ──
-    if (!chapters.length) {
+    // ── Step 3: Fallback to custom model_config (when Lovable AI failed or no results) ──
+    if (!lovableAIWorked) {
       const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
       const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
       const supabase = createClient(supabaseUrl, serviceKey);
