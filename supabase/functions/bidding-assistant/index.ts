@@ -118,7 +118,7 @@ serve(async (req) => {
             { role: "system", content: systemPrompt },
             { role: "user", content: userPrompt },
           ],
-          max_tokens: 4096,
+          ...(rewriteModel.startsWith("openai/") || rewriteModel.includes("gpt-") ? { max_completion_tokens: 4096 } : { max_tokens: 4096 }),
         }),
       });
 
