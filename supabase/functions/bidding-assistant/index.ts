@@ -241,7 +241,7 @@ ${outlineSummary || "（暂无提纲）"}
             { role: "user", content: `${context}\n\n用户问题: ${message}` },
           ],
           tools: outlineTools,
-          max_tokens: 4096,
+          ...(chatModel.startsWith("openai/") || chatModel.includes("gpt-") ? { max_completion_tokens: 4096 } : { max_tokens: 4096 }),
         }),
       });
 
