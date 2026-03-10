@@ -611,7 +611,7 @@ Excel的格式可能包括但不限于：
         headers: { Authorization: `Bearer ${aiKey}`, "Content-Type": "application/json" },
         body: JSON.stringify({
           model: aiModel,
-          max_tokens: configMaxTokens,
+          ...(aiModel.startsWith("openai/") || aiModel.includes("gpt-") ? { max_completion_tokens: configMaxTokens } : { max_tokens: configMaxTokens }),
           messages: [
             {
               role: "system",
