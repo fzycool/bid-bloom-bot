@@ -118,7 +118,7 @@ serve(async (req) => {
             { role: "system", content: systemPrompt },
             { role: "user", content: userPrompt },
           ],
-          max_tokens: 4096,
+          ...(rewriteModel.startsWith("openai/") || rewriteModel.includes("gpt-") ? { max_completion_tokens: 4096 } : { max_tokens: 4096 }),
         }),
       });
 
@@ -241,7 +241,7 @@ ${outlineSummary || "（暂无提纲）"}
             { role: "user", content: `${context}\n\n用户问题: ${message}` },
           ],
           tools: outlineTools,
-          max_tokens: 4096,
+          ...(chatModel.startsWith("openai/") || chatModel.includes("gpt-") ? { max_completion_tokens: 4096 } : { max_tokens: 4096 }),
         }),
       });
 
@@ -440,7 +440,11 @@ ${(employees || []).map((e: any) => `- ${e.name}: ${e.current_position || "未�
       { role: "user", content: userContent },
     ],
   };
-  requestBody.max_tokens = maxTokens;
+  if (aiModel.startsWith("openai/") || aiModel.includes("gpt-")) {
+    requestBody.max_completion_tokens = maxTokens;
+  } else {
+    requestBody.max_tokens = maxTokens;
+  }
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 180000); // 3 min timeout

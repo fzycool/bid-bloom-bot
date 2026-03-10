@@ -319,15 +319,20 @@ async function callAI(
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 120000);
 
+  const useMaxCompletionTokens = model.startsWith("openai/") || model.includes("gpt-");
   const body: any = {
     model,
     messages: [
       { role: "system", content: systemPrompt },
       { role: "user", content: userContent },
     ],
-    max_tokens: maxTokens,
     temperature: 0.1,
   };
+  if (useMaxCompletionTokens) {
+    body.max_completion_tokens = maxTokens;
+  } else {
+    body.max_tokens = maxTokens;
+  }
 
   if (tools) {
     body.tools = tools;

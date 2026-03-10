@@ -296,14 +296,20 @@ ${parsedOutline?.overall_strategy ? `【投标策略】${parsedOutline.overall_s
 请严格按照上述子章节结构，为"${root.section_number || ""} ${root.title}"章节${children.length > 0 ? "的每一个子章节逐一" : ""}撰写完整的投标方案正文。
 重要：不得跳过任何子章节，即使没有参考资料也必须撰写。每段内容必须标注来源。优先使用公司材料库中的内容。`;
 
+  const useMaxCompletionTokens = aiModel.startsWith("openai/") || aiModel.includes("gpt-");
+  const tokenLimit = Math.min(maxTokens, 8192);
   const requestBody: any = {
     model: aiModel,
     messages: [
       { role: "system", content: systemPrompt },
       { role: "user", content: userPrompt },
     ],
-    max_tokens: Math.min(maxTokens, 8192),
   };
+  if (useMaxCompletionTokens) {
+    requestBody.max_completion_tokens = tokenLimit;
+  } else {
+    requestBody.max_tokens = tokenLimit;
+  }
 
   let generatedContent = "";
 

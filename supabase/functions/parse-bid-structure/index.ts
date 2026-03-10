@@ -231,9 +231,9 @@ serve(async (req) => {
           const isExcel = filePath.endsWith(".xlsx") || filePath.endsWith(".xls") || fileType?.includes("spreadsheet") || fileType?.includes("excel");
           const isDocx = filePath.endsWith(".docx") || fileType?.includes("wordprocessingml");
 
-          // Reject files over 10MB to prevent memory issues
-          if (fileSize > 10 * 1024 * 1024) {
-            await supabase.from("bid_analyses").update({ ai_status: "failed", ai_progress: "文件过大（超过10MB），请尝试压缩或拆分文件后重新上传" } as any).eq("id", analysisId);
+          // Reject files over 5MB to prevent memory issues in edge functions
+          if (fileSize > 5 * 1024 * 1024) {
+            await supabase.from("bid_analyses").update({ ai_status: "failed", ai_progress: "文件过大（超过5MB），请尝试压缩或拆分文件后重新上传" } as any).eq("id", analysisId);
             return;
           }
 
@@ -333,12 +333,19 @@ serve(async (req) => {
 
         await supabase.from("bid_analyses").update({ ai_progress: "正在调用AI模型分析文档结构..." } as any).eq("id", analysisId);
 
+        const tokenLimit = Math.min(configMaxTokens, 8192);
         const requestBody: any = {
           model: aiModel,
           messages,
           tools: sanitizeTools(STRUCTURE_TOOLS),
-          max_tokens: Math.min(configMaxTokens, 8192),
         };
+        // Some models require max_completion_tokens instead of max_tokens
+        const useMaxCompletionTokens = aiModel.startsWith("openai/") || aiModel.includes("gpt-");
+        if (useMaxCompletionTokens) {
+          requestBody.max_completion_tokens = tokenLimit;
+        } else {
+          requestBody.max_tokens = tokenLimit;
+        }
         if (isLovable) {
           requestBody.tool_choice = { type: "function", function: { name: "extract_document_structure" } };
         } else {

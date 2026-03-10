@@ -116,7 +116,7 @@ ${content}`;
       body: JSON.stringify({
         model: aiModel,
         messages: [{ role: "user", content: prompt }],
-        max_tokens: 4096,
+        ...(aiModel.startsWith("openai/") || aiModel.includes("gpt-") ? { max_completion_tokens: 4096 } : { max_tokens: 4096 }),
         temperature: 0.3,
       }),
     });
