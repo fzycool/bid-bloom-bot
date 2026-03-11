@@ -513,7 +513,7 @@ serve(async (req) => {
         systemPrompt,
         forAI,
         tools,
-        16384,
+        32768,
       );
 
       // Attempt 2: without tool_choice (fallback)
