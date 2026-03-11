@@ -60,12 +60,18 @@ const ModelManagement = () => {
       setModels((data as unknown as ModelConfig[]) || []);
       const keys: Record<string, string> = {};
       const tokens: Record<string, number> = {};
+      const urls: Record<string, string> = {};
+      const names: Record<string, string> = {};
       (data as unknown as ModelConfig[])?.forEach((m) => {
         keys[m.id] = m.api_key || "";
         tokens[m.id] = m.max_tokens || PROVIDER_DEFAULTS[m.provider] || 8192;
+        urls[m.id] = m.base_url || "";
+        names[m.id] = m.model_name || "";
       });
       setEditKeys(keys);
       setEditMaxTokens(tokens);
+      setEditBaseUrls(urls);
+      setEditModelNames(names);
     } catch (err: any) {
       toast({ title: "加载失败", description: err.message, variant: "destructive" });
     } finally {
