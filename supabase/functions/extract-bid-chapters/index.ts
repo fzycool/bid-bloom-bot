@@ -440,7 +440,7 @@ serve(async (req) => {
     }
 
     // ── Step 2: AI extraction (always run to get complete/custom chapters) ──
-    const forAI = selectTextForAI(fullText, 80000);
+    const forAI = selectTextForAI(fullText, 120000);
 
     const systemPrompt = `你是专业的文档结构分析师。请分析以下文档内容，提取完整的章节目录结构（包括所有层级）。
 
