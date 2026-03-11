@@ -211,6 +211,13 @@ function selectTextForAI(fullText: string, maxLen: number): string {
     if (selected.length > maxLen * 0.5) return selected;
   }
 
+  // For very large docs: include beginning + end (chapter titles often appear at transitions)
+  if (fullText.length > maxLen * 1.5) {
+    const headSize = Math.floor(maxLen * 0.7);
+    const tailSize = maxLen - headSize;
+    return fullText.substring(0, headSize) + "\n\n...[中间内容省略]...\n\n" + fullText.substring(fullText.length - tailSize);
+  }
+
   // Fallback: first maxLen chars
   return fullText.substring(0, maxLen);
 }
