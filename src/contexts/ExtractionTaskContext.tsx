@@ -105,6 +105,19 @@ export function ExtractionTaskProvider({ children }: { children: React.ReactNode
     }
   };
 
+  const isResumeChapter = (ch: ChapterForSave): boolean => {
+    const titleText = `${ch.section_number} ${ch.title}`;
+    if (resumeTitleKeywords.some(kw => titleText.includes(kw))) return true;
+    const contentSample = (ch.content || "").substring(0, 5000);
+    if (!contentSample || contentSample.length < 100) return false;
+    let hits = 0;
+    for (const pat of resumeContentPatterns) {
+      if (pat.test(contentSample)) hits++;
+      if (hits >= 2) return true;
+    }
+    return false;
+  };
+
   const startTask = useCallback((params: StartTaskParams) => {
     if (taskRunningRef.current) return;
     taskRunningRef.current = true;
@@ -150,6 +163,9 @@ export function ExtractionTaskProvider({ children }: { children: React.ReactNode
         if (analysisErr || !analysis) throw new Error(analysisErr?.message || "创建项目失败");
         const analysisId = (analysis as any).id;
 
+        const resumeImportCreated: string[] = [];
+        const resumeImportMerged: string[] = [];
+
         for (let i = 0; i < sel.length; i++) {
           if (cancelledRef.current) {
             updateTask({ status: "cancelled" });
@@ -164,7 +180,8 @@ export function ExtractionTaskProvider({ children }: { children: React.ReactNode
           }
 
           const ch = sel[i];
-          updateTask({ current: i + 1, phase: "saving" });
+          const isResume = isResumeChapter(ch);
+          updateTask({ current: i + 1, phase: isResume ? "importing_resumes" : "saving" });
 
           try {
             const blob = await buildChapterDocx(ch.startChunk, ch.endChunk);
@@ -179,69 +196,50 @@ export function ExtractionTaskProvider({ children }: { children: React.ReactNode
               file_type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
               ai_status: "completed",
               content_description: `从「${fileName}」提取的章节内容`,
-              material_type: "标书章节",
+              material_type: isResume ? "人员简历" : "标书章节",
               bid_analysis_id: analysisId,
             });
+
+            // Inline resume import: when saving a resume chapter, immediately extract and import
+            if (isResume && (ch.content || "").length > 30) {
+              console.log(`[Resume] Importing from chapter: ${ch.section_number} ${ch.title}`);
+              try {
+                const { data: importResult, error: importErr } = await supabase.functions.invoke("resume-factory", {
+                  body: {
+                    action: "import-from-chapters",
+                    userId,
+                    chapters: [{
+                      section_number: ch.section_number,
+                      title: ch.title,
+                      content: ch.content || "",
+                    }],
+                  },
+                });
+                if (!importErr && importResult?.results?.length) {
+                  for (const r of importResult.results) {
+                    if (r.action === "created") resumeImportCreated.push(r.name);
+                    if (r.action === "merged") resumeImportMerged.push(r.name);
+                  }
+                  updateTask({
+                    resumeImportResult: { created: [...resumeImportCreated], merged: [...resumeImportMerged] },
+                  });
+                }
+              } catch (resumeErr: any) {
+                console.error(`Resume import error for chapter ${ch.section_number}:`, resumeErr);
+              }
+            }
           } catch (err: any) {
             console.error(`Save chapter ${ch.section_number} error:`, err);
           }
           if (i < sel.length - 1) await new Promise(r => setTimeout(r, 500));
         }
 
-        // Auto-detect and import resume chapters with enhanced detection
-        const resumeChapters = sel.filter(ch => {
-          const titleText = `${ch.section_number} ${ch.title}`.toLowerCase();
-          // Strong title match
-          if (resumeTitleKeywords.some(kw => titleText.includes(kw))) return true;
-          // Content-based detection: scan more content (first 5000 chars)
-          const contentSample = (ch.content || "").substring(0, 5000);
-          if (!contentSample || contentSample.length < 100) return false;
-          let hits = 0;
-          for (const pat of resumeContentPatterns) {
-            if (pat.test(contentSample)) hits++;
-            if (hits >= 2) return true;
-          }
-          return false;
-        });
-
-        // If no resume chapters found by heuristics, try AI-based detection on likely candidates
-        if (resumeChapters.length === 0 && !cancelledRef.current) {
-          const candidates = sel.filter(ch => {
-            const content = (ch.content || "").substring(0, 2000);
-            // Check for at least 1 resume pattern hit
-            return resumeContentPatterns.some(pat => pat.test(content));
-          });
-          if (candidates.length > 0 && candidates.length <= 10) {
-            console.log(`Heuristic found 0 resumes, trying AI detection on ${candidates.length} candidates`);
-            for (const ch of candidates) {
-              if (!resumeChapters.includes(ch)) resumeChapters.push(ch);
-            }
-          }
-        }
-
-        if (resumeChapters.length > 0 && !cancelledRef.current) {
-          updateTask({ phase: "importing_resumes", current: 0, total: resumeChapters.length });
-          try {
-            const chaptersForImport = resumeChapters.map(ch => ({
-              section_number: ch.section_number,
-              title: ch.title,
-              content: ch.content || "",
-            }));
-            const { data: importResult, error: importErr } = await supabase.functions.invoke("resume-factory", {
-              body: { action: "import-from-chapters", userId, chapters: chaptersForImport },
-            });
-            if (!importErr && importResult?.results?.length) {
-              const created = importResult.results.filter((r: any) => r.action === "created").map((r: any) => r.name);
-              const merged = importResult.results.filter((r: any) => r.action === "merged").map((r: any) => r.name);
-              updateTask({ resumeImportResult: { created, merged } });
-              const parts: string[] = [];
-              if (created.length) parts.push(`新增${created.length}人`);
-              if (merged.length) parts.push(`更新${merged.length}人`);
-              if (parts.length) toast({ title: "简历已自动导入", description: `${parts.join("，")}至简历工厂` });
-            }
-          } catch (err: any) {
-            console.error("Resume import error:", err);
-          }
+        // Final resume import summary toast
+        if (resumeImportCreated.length || resumeImportMerged.length) {
+          const parts: string[] = [];
+          if (resumeImportCreated.length) parts.push(`新增${resumeImportCreated.length}人`);
+          if (resumeImportMerged.length) parts.push(`更新${resumeImportMerged.length}人`);
+          toast({ title: "简历已自动导入", description: `${parts.join("，")}至简历工厂` });
         }
 
         updateTask({ status: "done" });
