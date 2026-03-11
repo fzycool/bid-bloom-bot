@@ -188,12 +188,14 @@ export function ExtractionTaskProvider({ children }: { children: React.ReactNode
           if (i < sel.length - 1) await new Promise(r => setTimeout(r, 500));
         }
 
-        // Auto-detect and import resume chapters
+        // Auto-detect and import resume chapters with enhanced detection
         const resumeChapters = sel.filter(ch => {
-          const titleText = `${ch.section_number} ${ch.title}`;
+          const titleText = `${ch.section_number} ${ch.title}`.toLowerCase();
+          // Strong title match
           if (resumeTitleKeywords.some(kw => titleText.includes(kw))) return true;
-          const contentSample = (ch.content || "").substring(0, 3000);
-          if (!contentSample) return false;
+          // Content-based detection: scan more content (first 5000 chars)
+          const contentSample = (ch.content || "").substring(0, 5000);
+          if (!contentSample || contentSample.length < 100) return false;
           let hits = 0;
           for (const pat of resumeContentPatterns) {
             if (pat.test(contentSample)) hits++;
@@ -201,6 +203,21 @@ export function ExtractionTaskProvider({ children }: { children: React.ReactNode
           }
           return false;
         });
+
+        // If no resume chapters found by heuristics, try AI-based detection on likely candidates
+        if (resumeChapters.length === 0 && !cancelledRef.current) {
+          const candidates = sel.filter(ch => {
+            const content = (ch.content || "").substring(0, 2000);
+            // Check for at least 1 resume pattern hit
+            return resumeContentPatterns.some(pat => pat.test(content));
+          });
+          if (candidates.length > 0 && candidates.length <= 10) {
+            console.log(`Heuristic found 0 resumes, trying AI detection on ${candidates.length} candidates`);
+            for (const ch of candidates) {
+              if (!resumeChapters.includes(ch)) resumeChapters.push(ch);
+            }
+          }
+        }
 
         if (resumeChapters.length > 0 && !cancelledRef.current) {
           updateTask({ phase: "importing_resumes", current: 0, total: resumeChapters.length });
