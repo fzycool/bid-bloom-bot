@@ -139,8 +139,8 @@ const ModelManagement = () => {
     try {
       const { data, error } = await supabase.functions.invoke("test-model", {
         body: {
-          base_url: model.base_url,
-          model_name: model.model_name,
+          base_url: editBaseUrls[model.id] || model.base_url,
+          model_name: editModelNames[model.id] || model.model_name,
           api_key: model.provider === "lovable" ? undefined : apiKey,
           provider: model.provider,
         },
