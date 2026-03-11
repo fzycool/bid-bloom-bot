@@ -48,32 +48,36 @@ function extractChaptersFromBody(fullText: string): Chapter[] {
   const chapters: Chapter[] = [];
   const lines = fullText.split("\n");
 
-  // Patterns for chapter headings in body text (stricter than TOC patterns)
-  const bodyPatterns: Array<{ regex: RegExp; groups: 2 | 1 }> = [
+  // Patterns for chapter headings in body text
+  const bodyPatterns: Array<{ regex: RegExp; groups: 2 }> = [
     // "第一章 标题" or "第1章 标题"
-    { regex: /^(第[一二三四五六七八九十百千\d]+[章部分节篇])\s*[.、\s]*(.+)$/, groups: 2 },
-    // "1.1. 标题" or "1.1 标题"
-    { regex: /^(\d+(?:\.\d+)*\.?)\s+(.+)$/, groups: 2 },
+    { regex: /^(第[一二三四五六七八九十百千\d]+[章部分节篇])\s*[.、：:\s]*(.+?)(?:\s*[.·…]+\s*\d*\s*)?$/, groups: 2 },
+    // "1.1. 标题" or "1.1 标题" — require at least one dot to avoid matching years like "2025"
+    { regex: /^(\d+\.\d+(?:\.\d+)*\.?)\s+(.+?)(?:\s*[.·…]+\s*\d*\s*)?$/, groups: 2 },
+    // Top-level "1 标题" — only single digit 1-99 to avoid years
+    { regex: /^(\d{1,2})\s+([^\d].{2,})(?:\s*[.·…]+\s*\d*\s*)?$/, groups: 2 },
     // "（一）标题" or "(1) 标题"
-    { regex: /^([（(][一二三四五六七八九十\d]+[）)])\s*(.+)$/, groups: 2 },
+    { regex: /^([（(][一二三四五六七八九十\d]+[）)])\s*(.+?)(?:\s*[.·…]+\s*\d*\s*)?$/, groups: 2 },
     // "附录A 标题" or "附件1 标题"
-    { regex: /^(附[录件表]\s*[A-Za-z\d]*)\s*[.、\s]*(.+)$/, groups: 2 },
+    { regex: /^(附[录件表]\s*[A-Za-z\d]*)\s*[.、\s]*(.+?)(?:\s*[.·…]+\s*\d*\s*)?$/, groups: 2 },
     // "一、标题" Chinese numbered
-    { regex: /^([一二三四五六七八九十百]+)[、.．]\s*(.+)$/, groups: 2 },
+    { regex: /^([一二三四五六七八九十百]+)[、.．]\s*(.+?)(?:\s*[.·…]+\s*\d*\s*)?$/, groups: 2 },
   ];
 
   for (const line of lines) {
     const trimmed = line.trim();
-    if (!trimmed || trimmed.length > 80 || trimmed.length < 2) continue;
+    if (!trimmed || trimmed.length > 200 || trimmed.length < 2) continue;
 
-    for (const { regex, groups } of bodyPatterns) {
+    for (const { regex } of bodyPatterns) {
       const m = trimmed.match(regex);
       if (m) {
         const sectionNum = m[1].replace(/\.$/, "").trim();
-        const title = (groups === 2 ? m[2] : m[1]).trim()
+        const title = m[2].trim()
           .replace(/[.\s·…]+\d*$/, "")
           .trim();
         if (title.length < 1 || title.length > 80) continue;
+        // Skip date-like matches: "2025年", "6 月" etc.
+        if (/^\d{4}年/.test(trimmed) || /^\d{1,2}\s*月/.test(trimmed)) continue;
         const level = inferLevel(sectionNum);
         chapters.push({ section_number: sectionNum, title, level });
         break;
@@ -90,10 +94,10 @@ function extractChaptersFromBody(fullText: string): Chapter[] {
 function extractTocFromText(fullText: string): Chapter[] {
   const chapters: Chapter[] = [];
 
-  // Find Word-style TOC region (look for "目录" or "目 录" followed by structured entries)
-  let tocIdx = fullText.indexOf("目录");
-  if (tocIdx < 0) tocIdx = fullText.indexOf("目 录");
-  
+  // Find Word-style TOC region - use regex for flexible spacing (目录, 目 录, 目　录, etc.)
+  const tocMatch = fullText.match(/目\s*录/);
+  const tocIdx = tocMatch ? tocMatch.index! : -1;
+
   // If no TOC found, try scanning the full text for chapter heading patterns
   if (tocIdx < 0) {
     return extractChaptersFromBody(fullText);
@@ -496,13 +500,27 @@ serve(async (req) => {
       throw new Error("文档内容过少，无法提取章节结构");
     }
 
+    console.log(`fullText length=${fullText.length}`);
+    // Log first 500 chars for debugging
+    console.log(`fullText preview: ${fullText.substring(0, 500).replace(/\n/g, "\\n")}`);
+
     let chapters: Chapter[] = [];
 
     // ── Step 1: Try pre-processing (regex-based TOC extraction) ──
     const preParsed = extractTocFromText(fullText);
+    console.log(`Pre-processing found ${preParsed.length} TOC entries`);
+    
     if (preParsed.length >= 3) {
-      console.log(`Pre-processing found ${preParsed.length} TOC entries`);
       chapters = preParsed;
+    }
+    
+    // If TOC parsing found few entries, also try body scan and merge
+    if (chapters.length < 5) {
+      const bodyScan = extractChaptersFromBody(fullText);
+      if (bodyScan.length > chapters.length) {
+        console.log(`Body scan found more chapters (${bodyScan.length} vs ${chapters.length}), using body scan`);
+        chapters = bodyScan;
+      }
     }
 
     // ── Step 2: AI extraction (always run to get complete/custom chapters) ──
