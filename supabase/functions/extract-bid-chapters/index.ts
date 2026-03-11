@@ -508,9 +508,19 @@ serve(async (req) => {
 
     // ── Step 1: Try pre-processing (regex-based TOC extraction) ──
     const preParsed = extractTocFromText(fullText);
+    console.log(`Pre-processing found ${preParsed.length} TOC entries`);
+    
     if (preParsed.length >= 3) {
-      console.log(`Pre-processing found ${preParsed.length} TOC entries`);
       chapters = preParsed;
+    }
+    
+    // If TOC parsing found few entries, also try body scan and merge
+    if (chapters.length < 5) {
+      const bodyScan = extractChaptersFromBody(fullText);
+      if (bodyScan.length > chapters.length) {
+        console.log(`Body scan found more chapters (${bodyScan.length} vs ${chapters.length}), using body scan`);
+        chapters = bodyScan;
+      }
     }
 
     // ── Step 2: AI extraction (always run to get complete/custom chapters) ──
