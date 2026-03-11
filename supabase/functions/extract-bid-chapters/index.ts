@@ -96,17 +96,28 @@ function extractTocFromText(fullText: string): Chapter[] {
     for (const pattern of tocPatterns) {
       const m = trimmed.match(pattern);
       if (m) {
-        const sectionNum = m[1].replace(/\.$/, "").trim();
-        const title = m[2].trim()
-          .replace(/\s*PAGEREF\s.*$/, "")
-          .replace(/\s*\\h\s*$/, "")
-          .replace(/\t.*$/, "")
-          .replace(/[.\s·…]+\d*$/, "") // Remove trailing dots + page numbers
-          .trim();
+        let sectionNum: string;
+        let title: string;
+
+        if (m.length === 2) {
+          // Unnumbered TOC entry pattern: only one capture group (the title)
+          sectionNum = "";
+          title = m[1].trim()
+            .replace(/[.\s·…]+\d*$/, "")
+            .trim();
+        } else {
+          sectionNum = m[1].replace(/\.$/, "").trim();
+          title = m[2].trim()
+            .replace(/\s*PAGEREF\s.*$/, "")
+            .replace(/\s*\\h\s*$/, "")
+            .replace(/\t.*$/, "")
+            .replace(/[.\s·…]+\d*$/, "") // Remove trailing dots + page numbers
+            .trim();
+        }
 
         if (title.length < 1 || title.length > 120) continue;
 
-        const level = inferLevel(sectionNum);
+        const level = sectionNum ? inferLevel(sectionNum) : 1;
         chapters.push({ section_number: sectionNum, title, level });
         matched = true;
         consecutiveNonMatch = 0;
