@@ -88,7 +88,12 @@ const ModelManagement = () => {
     try {
       const { error } = await supabase
         .from("model_config")
-        .update({ api_key: editKeys[model.id] || null, max_tokens: editMaxTokens[model.id] || 8192 } as any)
+        .update({
+          api_key: editKeys[model.id] || null,
+          max_tokens: editMaxTokens[model.id] || 8192,
+          base_url: editBaseUrls[model.id] || model.base_url,
+          model_name: editModelNames[model.id] || model.model_name,
+        } as any)
         .eq("id", model.id);
       if (error) throw error;
       toast({ title: "配置已保存" });
