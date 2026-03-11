@@ -32,11 +32,13 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <AuthProvider>
-          <Routes>
-            <Route path="/" element={<PublicRoute><Index /></PublicRoute>} />
-            <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-            <Route path="*" element={<NotFound />} />
-          </Routes>
+          <ExtractionTaskProvider>
+            <Routes>
+              <Route path="/" element={<PublicRoute><Index /></PublicRoute>} />
+              <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </ExtractionTaskProvider>
         </AuthProvider>
       </BrowserRouter>
     </TooltipProvider>
