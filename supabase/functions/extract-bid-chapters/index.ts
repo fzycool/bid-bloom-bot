@@ -42,6 +42,49 @@ function findLineStartOccurrences(text: string, pattern: string): number[] {
   return positions;
 }
 
+// ─── Fallback: extract chapter headings from body text ────────────
+
+function extractChaptersFromBody(fullText: string): Chapter[] {
+  const chapters: Chapter[] = [];
+  const lines = fullText.split("\n");
+
+  // Patterns for chapter headings in body text (stricter than TOC patterns)
+  const bodyPatterns: Array<{ regex: RegExp; groups: 2 | 1 }> = [
+    // "第一章 标题" or "第1章 标题"
+    { regex: /^(第[一二三四五六七八九十百千\d]+[章部分节篇])\s*[.、\s]*(.+)$/, groups: 2 },
+    // "1.1. 标题" or "1.1 标题"
+    { regex: /^(\d+(?:\.\d+)*\.?)\s+(.+)$/, groups: 2 },
+    // "（一）标题" or "(1) 标题"
+    { regex: /^([（(][一二三四五六七八九十\d]+[）)])\s*(.+)$/, groups: 2 },
+    // "附录A 标题" or "附件1 标题"
+    { regex: /^(附[录件表]\s*[A-Za-z\d]*)\s*[.、\s]*(.+)$/, groups: 2 },
+    // "一、标题" Chinese numbered
+    { regex: /^([一二三四五六七八九十百]+)[、.．]\s*(.+)$/, groups: 2 },
+  ];
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.length > 80 || trimmed.length < 2) continue;
+
+    for (const { regex, groups } of bodyPatterns) {
+      const m = trimmed.match(regex);
+      if (m) {
+        const sectionNum = m[1].replace(/\.$/, "").trim();
+        const title = (groups === 2 ? m[2] : m[1]).trim()
+          .replace(/[.\s·…]+\d*$/, "")
+          .trim();
+        if (title.length < 1 || title.length > 80) continue;
+        const level = inferLevel(sectionNum);
+        chapters.push({ section_number: sectionNum, title, level });
+        break;
+      }
+    }
+  }
+
+  console.log(`Body scan found ${chapters.length} chapter headings`);
+  return chapters;
+}
+
 // ─── Pre-processing: extract TOC from text directly ───────────────
 
 function extractTocFromText(fullText: string): Chapter[] {
