@@ -392,20 +392,31 @@ export default function MaterialExtractor({ open, onOpenChange, onComplete }: Pr
 
     const analysisId = (analysis as any).id;
 
+    // Upload helper with retry (handles transient "Failed to fetch" on large files)
+    const uploadWithRetry = async (path: string, data: Blob, maxRetries = 3) => {
+      for (let attempt = 0; attempt < maxRetries; attempt++) {
+        const { error } = await supabase.storage
+          .from("company-materials")
+          .upload(path, data, {
+            contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          });
+        if (!error) return;
+        if (attempt < maxRetries - 1 && error.message?.includes("Failed to fetch")) {
+          console.warn(`Upload retry ${attempt + 1} for ${path}`);
+          await new Promise(r => setTimeout(r, 2000 * (attempt + 1)));
+          continue;
+        }
+        throw error;
+      }
+    };
+
     for (let i = 0; i < sel.length; i++) {
       const ch = sel[i];
       setProgress({ current: i + 1, total: sel.length });
       try {
         const blob = await buildChapterDocx(zipRef.current!, parsedRef.current!, ch.startChunk, ch.endChunk);
-        // Supabase Storage only allows ASCII keys — use pure numeric path
-        // Chinese title is preserved in database record (file_name column)
         const storagePath = `${user.id}/${Date.now()}_ch${i}.docx`;
-        const { error: upErr } = await supabase.storage
-          .from("company-materials")
-          .upload(storagePath, blob, {
-            contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-          });
-        if (upErr) throw upErr;
+        await uploadWithRetry(storagePath, blob);
 
         await supabase.from("company_materials").insert({
           user_id: user.id,
@@ -422,6 +433,8 @@ export default function MaterialExtractor({ open, onOpenChange, onComplete }: Pr
         console.error(`Save chapter ${ch.section_number} error:`, err);
         toast({ title: `保存失败: ${ch.section_number} ${ch.title}`, description: err.message, variant: "destructive" });
       }
+      // Brief pause between uploads to avoid overwhelming the connection
+      if (i < sel.length - 1) await new Promise(r => setTimeout(r, 500));
     }
 
     // ── Auto-detect and import resume chapters ──
