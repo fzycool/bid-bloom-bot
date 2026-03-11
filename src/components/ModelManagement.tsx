@@ -43,7 +43,10 @@ const ModelManagement = () => {
   const [testing, setTesting] = useState<string | null>(null);
   const [editKeys, setEditKeys] = useState<Record<string, string>>({});
   const [editMaxTokens, setEditMaxTokens] = useState<Record<string, number>>({});
+  const [editBaseUrls, setEditBaseUrls] = useState<Record<string, string>>({});
+  const [editModelNames, setEditModelNames] = useState<Record<string, string>>({});
   const [showKeys, setShowKeys] = useState<Record<string, boolean>>({});
+  const [editingFields, setEditingFields] = useState<Record<string, boolean>>({});
 
   // ... keep existing code (fetchModels, useEffect, handleSaveKey, handleActivate)
   const fetchModels = async () => {
