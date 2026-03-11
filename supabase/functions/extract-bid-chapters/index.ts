@@ -559,7 +559,7 @@ serve(async (req) => {
           systemPrompt,
           forAI,
           tools,
-          mc.max_tokens || 8192,
+          Math.max(mc.max_tokens || 8192, 16384),
         );
         if (mcChapters.length > chapters.length) {
           chapters = mcChapters;
