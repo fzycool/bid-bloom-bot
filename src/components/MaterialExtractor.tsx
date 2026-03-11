@@ -208,10 +208,11 @@ export default function MaterialExtractor({ open, onOpenChange, onComplete }: Pr
   const parsedRef = useRef<ParsedDocx | null>(null);
   const zipRef = useRef<JSZip | null>(null);
 
-  const [step, setStep] = useState<"upload" | "analyzing" | "select" | "saving" | "done">("upload");
+  const [step, setStep] = useState<"upload" | "analyzing" | "select" | "saving" | "importing_resumes" | "done">("upload");
   const [chapters, setChapters] = useState<ChapterWithRange[]>([]);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [progress, setProgress] = useState({ current: 0, total: 0 });
+  const [resumeImportResult, setResumeImportResult] = useState<{ created: string[]; merged: string[] } | null>(null);
   const [autoSelecting, setAutoSelecting] = useState(false);
   const [fileName, setFileName] = useState("");
   const [projectPrefix, setProjectPrefix] = useState("");
