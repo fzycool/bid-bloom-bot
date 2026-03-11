@@ -208,10 +208,11 @@ export default function MaterialExtractor({ open, onOpenChange, onComplete }: Pr
   const parsedRef = useRef<ParsedDocx | null>(null);
   const zipRef = useRef<JSZip | null>(null);
 
-  const [step, setStep] = useState<"upload" | "analyzing" | "select" | "saving" | "done">("upload");
+  const [step, setStep] = useState<"upload" | "analyzing" | "select" | "saving" | "importing_resumes" | "done">("upload");
   const [chapters, setChapters] = useState<ChapterWithRange[]>([]);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [progress, setProgress] = useState({ current: 0, total: 0 });
+  const [resumeImportResult, setResumeImportResult] = useState<{ created: string[]; merged: string[] } | null>(null);
   const [autoSelecting, setAutoSelecting] = useState(false);
   const [fileName, setFileName] = useState("");
   const [projectPrefix, setProjectPrefix] = useState("");
@@ -227,6 +228,7 @@ export default function MaterialExtractor({ open, onOpenChange, onComplete }: Pr
     setProjectPrefix("");
     setAnalyzePhase("uploading");
     setProjectCategory("");
+    setResumeImportResult(null);
     parsedRef.current = null;
     zipRef.current = null;
   };
@@ -385,6 +387,48 @@ export default function MaterialExtractor({ open, onOpenChange, onComplete }: Pr
       } catch (err: any) {
         console.error(`Save chapter ${ch.section_number} error:`, err);
         toast({ title: `保存失败: ${ch.section_number} ${ch.title}`, description: err.message, variant: "destructive" });
+      }
+    }
+
+    // ── Auto-detect and import resume chapters ──
+    const resumeKeywords = ["简历", "人员", "履历", "项目经理", "技术负责人", "项目总监", "拟投入", "团队成员", "主要人员", "人员配置"];
+    const resumeChapters = sel.filter(ch => {
+      const text = `${ch.section_number} ${ch.title}`;
+      return resumeKeywords.some(kw => text.includes(kw));
+    });
+
+    if (resumeChapters.length > 0) {
+      setStep("importing_resumes");
+      setProgress({ current: 0, total: resumeChapters.length });
+
+      try {
+        const chaptersForImport = resumeChapters.map(ch => ({
+          section_number: ch.section_number,
+          title: ch.title,
+          content: ch.content || "",
+        }));
+
+        const { data: importResult, error: importErr } = await supabase.functions.invoke("resume-factory", {
+          body: {
+            action: "import-from-chapters",
+            userId: user.id,
+            chapters: chaptersForImport,
+          },
+        });
+
+        if (!importErr && importResult?.results?.length) {
+          const created = importResult.results.filter((r: any) => r.action === "created").map((r: any) => r.name);
+          const merged = importResult.results.filter((r: any) => r.action === "merged").map((r: any) => r.name);
+          setResumeImportResult({ created, merged });
+
+          const parts: string[] = [];
+          if (created.length) parts.push(`新增${created.length}人`);
+          if (merged.length) parts.push(`更新${merged.length}人`);
+          toast({ title: "简历已自动导入", description: `${parts.join("，")}至简历工厂` });
+        }
+      } catch (err: any) {
+        console.error("Resume import error:", err);
+        // Non-fatal: don't block the save flow
       }
     }
 
@@ -558,20 +602,44 @@ export default function MaterialExtractor({ open, onOpenChange, onComplete }: Pr
           </div>
         )}
 
-        {step === "saving" && (
+        {(step === "saving" || step === "importing_resumes") && (
           <div className="space-y-4 py-8">
-            <p className="text-center text-sm font-medium">正在保存章节文件...</p>
+            <p className="text-center text-sm font-medium">
+              {step === "saving" ? "正在保存章节文件..." : "正在识别并导入人员简历..."}
+            </p>
             <Progress value={(progress.current / progress.total) * 100} />
             <p className="text-center text-xs text-muted-foreground">
-              {progress.current} / {progress.total} 个章节已保存
+              {step === "saving"
+                ? `${progress.current} / ${progress.total} 个章节已保存`
+                : "AI 正在提取简历信息并导入简历工厂"}
             </p>
           </div>
         )}
 
         {step === "done" && (
           <div className="flex flex-col items-center gap-4 py-8">
-            <Check className="w-12 h-12 text-green-500" />
+            <Check className="w-12 h-12 text-primary" />
             <p className="font-medium">提取完成</p>
+            {resumeImportResult && (resumeImportResult.created.length > 0 || resumeImportResult.merged.length > 0) && (
+              <div className="bg-muted/50 rounded-lg p-3 w-full max-w-md space-y-2">
+                <p className="text-sm font-medium flex items-center gap-1.5">
+                  <Users className="w-4 h-4 text-accent" />
+                  简历已自动导入简历工厂
+                </p>
+                {resumeImportResult.created.length > 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    <span className="text-primary font-medium">新增：</span>
+                    {resumeImportResult.created.join("、")}
+                  </p>
+                )}
+                {resumeImportResult.merged.length > 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    <span className="text-accent font-medium">更新：</span>
+                    {resumeImportResult.merged.join("、")}
+                  </p>
+                )}
+              </div>
+            )}
             <Button onClick={() => handleClose(false)}>关闭</Button>
           </div>
         )}
