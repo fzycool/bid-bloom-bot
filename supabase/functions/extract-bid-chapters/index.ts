@@ -500,6 +500,10 @@ serve(async (req) => {
       throw new Error("文档内容过少，无法提取章节结构");
     }
 
+    console.log(`fullText length=${fullText.length}`);
+    // Log first 500 chars for debugging
+    console.log(`fullText preview: ${fullText.substring(0, 500).replace(/\n/g, "\\n")}`);
+
     let chapters: Chapter[] = [];
 
     // ── Step 1: Try pre-processing (regex-based TOC extraction) ──
