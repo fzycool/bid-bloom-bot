@@ -228,6 +228,7 @@ export default function MaterialExtractor({ open, onOpenChange, onComplete }: Pr
     setProjectPrefix("");
     setAnalyzePhase("uploading");
     setProjectCategory("");
+    setResumeImportResult(null);
     parsedRef.current = null;
     zipRef.current = null;
   };
