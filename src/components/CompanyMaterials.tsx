@@ -48,6 +48,7 @@ interface ProjectGroup {
 export default function CompanyMaterials() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const { activeTask, pauseTask, resumeTask, cancelTask, clearTask } = useExtractionTask();
   const [projects, setProjects] = useState<ProjectGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedProject, setSelectedProject] = useState<ProjectGroup | null>(null);
