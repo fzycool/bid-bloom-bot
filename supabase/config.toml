@@ -1,0 +1,37 @@
+project_id = "rrnrhkgezdrwwkivthih"
+
+[functions.classify-document]
+verify_jwt = false
+
+[functions.parse-bid]
+verify_jwt = false
+
+[functions.bidding-assistant]
+verify_jwt = false
+
+[functions.resume-factory]
+verify_jwt = false
+
+[functions.parse-bid-structure]
+verify_jwt = false
+
+[functions.holographic-audit]
+verify_jwt = false
+
+[functions.extract-material-info]
+verify_jwt = false
+
+[functions.generate-proposal]
+verify_jwt = false
+
+[functions.contract-revision]
+verify_jwt = false
+
+[functions.extract-bid-chapters]
+verify_jwt = false
+
+[functions.classify-bid-chapters]
+verify_jwt = false
+
+[functions.organize-toc]
+verify_jwt = false

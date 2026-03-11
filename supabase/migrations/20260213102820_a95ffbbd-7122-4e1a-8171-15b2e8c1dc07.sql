@@ -1,0 +1,1 @@
+ALTER TABLE public.bid_analyses ADD COLUMN conflict_items jsonb DEFAULT '[]'::jsonb;
