@@ -216,12 +216,10 @@ export default function ProposalAssembler({ proposalId, sections, onEnterWorkspa
       setAutoSaving(true);
       try {
         for (const [sectionId, mats] of entries) {
-          // Store material file paths as JSON metadata for XML-level export
-          const materialRefs = mats.map(m => ({ file_path: m.file_path, file_name: m.file_name }));
-          // Also generate a text preview for the workspace editor
-          let previewText = mats.map(m => `📄 ${m.file_name}`).join("\n");
+          const materialRefs = mats.map((m) => ({ file_path: m.file_path, file_name: m.file_name }));
+          const content = await buildWorkspaceContent(mats);
           await supabase.from("proposal_sections").update({
-            content: previewText,
+            content,
             source_type: "material_assembly",
             source_id: JSON.stringify(materialRefs),
           }).eq("id", sectionId);
