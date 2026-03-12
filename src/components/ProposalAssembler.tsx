@@ -725,6 +725,43 @@ export default function ProposalAssembler({ proposalId, sections, onEnterWorkspa
 
   const matchedCount = scoredMaterials.filter(s => s.score > 0).length;
 
+  // ─── Auto-assemble: match materials to sections by title similarity ──
+  const handleAutoAssemble = useCallback(() => {
+    const flat = flattenTree(sections);
+    const usedMatIds = new Set<string>();
+    const newAssembly: AssemblyMapping = { ...assembly };
+
+    // For each section, find the best matching material(s) not yet used
+    const MIN_SCORE = 5;
+    for (const { section } of flat) {
+      const sectionTitle = `${section.section_number || ""} ${section.title}`;
+      // Score all unused materials
+      const scored = materials
+        .filter(m => !usedMatIds.has(m.id))
+        .map(m => ({ mat: m, score: computeScore(sectionTitle, m) }))
+        .filter(s => s.score >= MIN_SCORE)
+        .sort((a, b) => b.score - a.score);
+
+      if (scored.length === 0) continue;
+
+      // Take the best match (only top 1 to avoid over-filling)
+      const best = scored[0];
+      const existing = newAssembly[section.id] || [];
+      if (!existing.some(m => m.id === best.mat.id)) {
+        newAssembly[section.id] = [...existing, best.mat];
+        usedMatIds.add(best.mat.id);
+      }
+    }
+
+    const newCount = Object.values(newAssembly).flat().length;
+    const prevCount = Object.values(assembly).flat().length;
+    setAssembly(newAssembly);
+    toast({
+      title: "自动拼装完成",
+      description: `已匹配 ${newCount - prevCount} 个材料到对应章节，可手动调整`,
+    });
+  }, [sections, materials, assembly, computeScore, toast]);
+
   const totalAssembled = Object.values(assembly).flat().length;
 
   // ─── Render section tree with drop zones ─────────────────────
