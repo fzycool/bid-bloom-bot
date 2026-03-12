@@ -9,7 +9,7 @@ import { useToast } from "@/hooks/use-toast";
 import {
   FileText, ChevronRight, ChevronDown, Download, Loader2,
   GripVertical, Trash2, FolderOpen, ArrowRight, Package,
-  ChevronLeft, Search,
+  ChevronLeft, Search, Zap, Star,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import JSZip from "jszip";
