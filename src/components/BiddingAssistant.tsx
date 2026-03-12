@@ -329,6 +329,8 @@ interface ProposalSection {
   content: string | null;
   sort_order: number;
   parent_id: string | null;
+  source_type?: string | null;
+  source_id?: string | null;
   children?: ProposalSection[];
 }
 
