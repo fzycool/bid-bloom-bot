@@ -919,6 +919,15 @@ export default function ProposalAssembler({ proposalId, sections, onEnterWorkspa
           <Button
             variant="outline"
             size="sm"
+            onClick={handleAutoAssemble}
+            disabled={downloading || materials.length === 0}
+          >
+            <Zap className="w-4 h-4 mr-1" />
+            自动拼装
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
             onClick={handleSendToWorkspace}
             disabled={downloading || totalAssembled === 0}
           >
