@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import {
   Plus,
@@ -55,6 +56,13 @@ const TechCheckProjects = () => {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [uploading, setUploading] = useState<string | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<{
+    current: number;
+    total: number;
+    currentFileName: string;
+    failLogs: { name: string; reason: string }[];
+    successCount: number;
+  } | null>(null);
   const bidInputRef = useRef<HTMLInputElement>(null);
   const proposalInputRef = useRef<HTMLInputElement>(null);
   const uploadProjectRef = useRef<string | null>(null);
@@ -141,22 +149,37 @@ const TechCheckProjects = () => {
     let failCount = 0;
     const failDetails: { name: string; reason: string }[] = [];
 
-    for (const file of uploadFiles) {
+    setUploadProgress({ current: 0, total: uploadFiles.length, currentFileName: "", failLogs: [], successCount: 0 });
+
+    for (let i = 0; i < uploadFiles.length; i++) {
+      const file = uploadFiles[i];
+      setUploadProgress((prev) => prev && ({
+        ...prev,
+        current: i,
+        currentFileName: file.name,
+      }));
+
       // Validate file type
       const ext = file.name.split(".").pop()?.toLowerCase() || "";
       if (category === "bid_document" && !["pdf", "docx", "doc"].includes(ext)) {
         failCount++;
-        failDetails.push({ name: file.name, reason: `格式不支持（.${ext}），仅支持 PDF/Word` });
+        const detail = { name: file.name, reason: `格式不支持（.${ext}），仅支持 PDF/Word` };
+        failDetails.push(detail);
+        setUploadProgress((prev) => prev && ({ ...prev, failLogs: [...prev.failLogs, detail] }));
         continue;
       }
       if (category === "technical_proposal" && !["docx", "doc"].includes(ext)) {
         failCount++;
-        failDetails.push({ name: file.name, reason: `格式不支持（.${ext}），仅支持 Word` });
+        const detail = { name: file.name, reason: `格式不支持（.${ext}），仅支持 Word` };
+        failDetails.push(detail);
+        setUploadProgress((prev) => prev && ({ ...prev, failLogs: [...prev.failLogs, detail] }));
         continue;
       }
       if (file.size > 50 * 1024 * 1024) {
         failCount++;
-        failDetails.push({ name: file.name, reason: `文件大小 ${formatSize(file.size)} 超过 50MB 限制` });
+        const detail = { name: file.name, reason: `文件大小 ${formatSize(file.size)} 超过 50MB 限制` };
+        failDetails.push(detail);
+        setUploadProgress((prev) => prev && ({ ...prev, failLogs: [...prev.failLogs, detail] }));
         continue;
       }
 
@@ -167,7 +190,9 @@ const TechCheckProjects = () => {
 
       if (uploadErr) {
         failCount++;
-        failDetails.push({ name: file.name, reason: `存储上传失败：${uploadErr.message}` });
+        const detail = { name: file.name, reason: `存储上传失败：${uploadErr.message}` };
+        failDetails.push(detail);
+        setUploadProgress((prev) => prev && ({ ...prev, failLogs: [...prev.failLogs, detail] }));
         continue;
       }
 
@@ -187,15 +212,22 @@ const TechCheckProjects = () => {
 
       if (insertErr) {
         failCount++;
-        failDetails.push({ name: file.name, reason: `记录保存失败：${insertErr.message}` });
+        const detail = { name: file.name, reason: `记录保存失败：${insertErr.message}` };
+        failDetails.push(detail);
+        setUploadProgress((prev) => prev && ({ ...prev, failLogs: [...prev.failLogs, detail] }));
         continue;
       }
 
       setFiles((prev) => [fileRow as TechCheckFile, ...prev]);
       successCount++;
+      setUploadProgress((prev) => prev && ({ ...prev, successCount }));
     }
 
     setUploading(null);
+
+    // Keep progress visible for a moment then clear
+    setUploadProgress((prev) => prev && ({ ...prev, current: uploadFiles.length, currentFileName: "" }));
+    setTimeout(() => setUploadProgress(null), failDetails.length > 0 ? 10000 : 3000);
 
     // 汇总提示（含失败原因）
     const totalFiles = uploadFiles.length;
@@ -457,9 +489,43 @@ const TechCheckProjects = () => {
                       )}
                     </div>
 
-                    {isUploading && (
-                      <div className="text-xs text-muted-foreground animate-pulse text-center py-2">
-                        正在上传文件...
+                    {(isUploading || uploadProgress) && uploadProgress && (
+                      <div className="space-y-2 rounded-lg border bg-muted/30 p-3">
+                        <div className="flex items-center justify-between text-xs text-muted-foreground">
+                          <span className="truncate max-w-[60%]">
+                            {uploadProgress.currentFileName
+                              ? `正在上传：${uploadProgress.currentFileName}`
+                              : uploadProgress.current >= uploadProgress.total
+                                ? "上传完成"
+                                : "准备上传..."}
+                          </span>
+                          <span className="shrink-0 font-medium">
+                            {Math.min(uploadProgress.current + (uploadProgress.currentFileName ? 1 : 0), uploadProgress.total)}/{uploadProgress.total}
+                          </span>
+                        </div>
+                        <Progress
+                          value={((uploadProgress.current + (uploadProgress.currentFileName ? 0.5 : 0)) / uploadProgress.total) * 100}
+                          className="h-2"
+                        />
+                        {uploadProgress.successCount > 0 && (
+                          <div className="text-[11px] text-green-600">
+                            ✅ 已成功上传 {uploadProgress.successCount} 个文件
+                          </div>
+                        )}
+                        {uploadProgress.failLogs.length > 0 && (
+                          <div className="space-y-1 mt-1">
+                            <div className="text-[11px] font-medium text-destructive">
+                              ❌ 失败日志（{uploadProgress.failLogs.length} 个）：
+                            </div>
+                            <div className="max-h-32 overflow-y-auto space-y-0.5">
+                              {uploadProgress.failLogs.map((log, idx) => (
+                                <div key={idx} className="text-[11px] text-destructive/80 bg-destructive/5 rounded px-2 py-1">
+                                  <span className="font-medium">{log.name}</span>：{log.reason}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )}
                   </CardContent>
