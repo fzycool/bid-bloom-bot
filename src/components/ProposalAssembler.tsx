@@ -789,6 +789,14 @@ export default function ProposalAssembler({ proposalId, sections, onEnterWorkspa
           <Badge variant="outline" className="text-xs">
             已分配 {totalAssembled} 个材料到 {Object.keys(assembly).length} 个章节
           </Badge>
+          {autoSaving && (
+            <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+              <Loader2 className="w-3 h-3 animate-spin" />自动保存中...
+            </span>
+          )}
+          {!autoSaving && totalAssembled > 0 && (
+            <span className="text-[10px] text-muted-foreground">✓ 已自动保存</span>
+          )}
         </div>
         <div className="flex gap-2">
           <Button
