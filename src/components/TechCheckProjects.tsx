@@ -489,9 +489,43 @@ const TechCheckProjects = () => {
                       )}
                     </div>
 
-                    {isUploading && (
-                      <div className="text-xs text-muted-foreground animate-pulse text-center py-2">
-                        正在上传文件...
+                    {(isUploading || uploadProgress) && uploadProgress && (
+                      <div className="space-y-2 rounded-lg border bg-muted/30 p-3">
+                        <div className="flex items-center justify-between text-xs text-muted-foreground">
+                          <span className="truncate max-w-[60%]">
+                            {uploadProgress.currentFileName
+                              ? `正在上传：${uploadProgress.currentFileName}`
+                              : uploadProgress.current >= uploadProgress.total
+                                ? "上传完成"
+                                : "准备上传..."}
+                          </span>
+                          <span className="shrink-0 font-medium">
+                            {Math.min(uploadProgress.current + (uploadProgress.currentFileName ? 1 : 0), uploadProgress.total)}/{uploadProgress.total}
+                          </span>
+                        </div>
+                        <Progress
+                          value={((uploadProgress.current + (uploadProgress.currentFileName ? 0.5 : 0)) / uploadProgress.total) * 100}
+                          className="h-2"
+                        />
+                        {uploadProgress.successCount > 0 && (
+                          <div className="text-[11px] text-green-600">
+                            ✅ 已成功上传 {uploadProgress.successCount} 个文件
+                          </div>
+                        )}
+                        {uploadProgress.failLogs.length > 0 && (
+                          <div className="space-y-1 mt-1">
+                            <div className="text-[11px] font-medium text-destructive">
+                              ❌ 失败日志（{uploadProgress.failLogs.length} 个）：
+                            </div>
+                            <div className="max-h-32 overflow-y-auto space-y-0.5">
+                              {uploadProgress.failLogs.map((log, idx) => (
+                                <div key={idx} className="text-[11px] text-destructive/80 bg-destructive/5 rounded px-2 py-1">
+                                  <span className="font-medium">{log.name}</span>：{log.reason}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )}
                   </CardContent>
