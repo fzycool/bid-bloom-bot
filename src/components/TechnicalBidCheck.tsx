@@ -144,6 +144,7 @@ const TechnicalBidCheck = () => {
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [newItemMode, setNewItemMode] = useState(false);
   const [newItem, setNewItem] = useState({ category: "", title: "", description: "", severity: "major" as CheckItem["severity"] });
+  const [showTemplatePicker, setShowTemplatePicker] = useState(false);
 
   // Load from localStorage
   useEffect(() => {
