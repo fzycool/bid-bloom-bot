@@ -154,7 +154,7 @@ const TechnicalBidCheck = () => {
       try {
         const parsed = JSON.parse(stored) as CheckList[];
         setChecklists(parsed);
-        if (parsed.length > 0 && !activeListId) setActiveListId(parsed[0].id);
+        // Don't auto-select; always show project list initially
       } catch { /* ignore */ }
     }
   }, [user?.id]);
