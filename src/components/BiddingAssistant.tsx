@@ -18,7 +18,7 @@ import {
   ShieldCheck, AlertCircle, Clock, Image as ImageIcon, UserPlus, X, ChevronLeft,
   Send, MessageSquare, PanelLeftClose, PanelRightClose,
   Pencil, MoreVertical, ChevronUp, FolderPlus, BookOpen,
-  Pause, Play,
+  Pause, Play, Package,
 } from "lucide-react";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem,
@@ -33,6 +33,7 @@ import TocDragEditor from "@/components/TocDragEditor";
 import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType, Header, Footer, LevelFormat, convertInchesToTwip, LevelSuffix } from "docx";
 import { saveAs } from "file-saver";
 import JSZip from "jszip";
+import ProposalAssembler from "@/components/ProposalAssembler";
 
 interface HeadingStyle {
   font?: string;
@@ -2552,6 +2553,7 @@ c) 字体：有明确要求的按要求执行，没有明确要求按文档模�
                   {hardMissing.length > 0 && <Badge variant="destructive" className="ml-1.5 text-[10px] px-1.5 py-0">{hardMissing.length}</Badge>}
                 </TabsTrigger>
                 <TabsTrigger value="personnel"><Users className="w-4 h-4 mr-1" />人员配置</TabsTrigger>
+                <TabsTrigger value="assembly"><Package className="w-4 h-4 mr-1" />标书组装</TabsTrigger>
               </TabsList>
 
               {/* Outline tab */}
@@ -3502,6 +3504,19 @@ c) 字体：有明确要求的按要求执行，没有明确要求按文档模�
                 ) : (
                   <p className="text-sm text-muted-foreground text-center py-8">暂无人员配置建议</p>
                 )}
+              </TabsContent>
+
+              {/* Assembly tab */}
+              <TabsContent value="assembly" className="space-y-4">
+                <ProposalAssembler
+                  proposalId={selectedProposal.id}
+                  sections={sections}
+                  onEnterWorkspace={() => {
+                    setActiveTab("proposal");
+                    setWorkspaceMode(true);
+                    fetchProposalDetails(selectedProposal.id);
+                  }}
+                />
               </TabsContent>
             </Tabs>
           )}
