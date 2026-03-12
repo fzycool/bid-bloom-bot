@@ -246,7 +246,52 @@ export default function ProposalAssembler({ proposalId, sections, onEnterWorkspa
     });
   };
 
-  const toggleSection = (id: string) => {
+  // ─── Reorder assigned materials via drag ───────────────────────
+  const handleAssignedDragStart = (sectionId: string, matId: string) => {
+    setReorderDrag({ sectionId, matId });
+  };
+
+  const handleAssignedDragOver = (e: React.DragEvent, sectionId: string, index: number) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    setReorderDropIndex({ sectionId, index });
+  };
+
+  const handleAssignedDrop = (e: React.DragEvent, targetSectionId: string, targetIndex: number) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setReorderDropIndex(null);
+    if (!reorderDrag) return;
+
+    const { sectionId: srcSectionId, matId } = reorderDrag;
+    setReorderDrag(null);
+
+    setAssembly(prev => {
+      const next = { ...prev };
+      // Find the material
+      const srcList = [...(next[srcSectionId] || [])];
+      const matIndex = srcList.findIndex(m => m.id === matId);
+      if (matIndex < 0) return prev;
+      const [mat] = srcList.splice(matIndex, 1);
+
+      if (srcSectionId === targetSectionId) {
+        // Reorder within same section
+        srcList.splice(targetIndex, 0, mat);
+        next[srcSectionId] = srcList;
+      } else {
+        // Move to different section
+        if (srcList.length === 0) delete next[srcSectionId];
+        else next[srcSectionId] = srcList;
+        const dstList = [...(next[targetSectionId] || [])];
+        if (dstList.some(m => m.id === matId)) return prev; // already there
+        dstList.splice(targetIndex, 0, mat);
+        next[targetSectionId] = dstList;
+      }
+      return next;
+    });
+  };
+
+
     setExpandedSections(prev => {
       const next = new Set(prev);
       next.has(id) ? next.delete(id) : next.add(id);
