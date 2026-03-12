@@ -354,17 +354,63 @@ const TechnicalBidCheck = () => {
             <h2 className="text-xl font-bold text-foreground">技术标质量检查</h2>
             <p className="text-sm text-muted-foreground mt-1">创建检查清单，逐项确认标书质量</p>
           </div>
-          <Button onClick={createNewChecklist} className="gap-1.5">
-            <Plus className="w-4 h-4" />
-            新建检查清单
-          </Button>
-          <label>
-            <input type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleExcelUpload} />
-            <Button variant="outline" className="gap-1.5" asChild>
-              <span><Upload className="w-4 h-4" />导入Excel</span>
+          <div className="flex items-center gap-2">
+            <Button onClick={() => setShowTemplatePicker(true)} className="gap-1.5">
+              <Plus className="w-4 h-4" />
+              新建检查清单
             </Button>
-          </label>
+            <label>
+              <input type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleExcelUpload} />
+              <Button variant="outline" className="gap-1.5" asChild>
+                <span><Upload className="w-4 h-4" />导入Excel</span>
+              </Button>
+            </label>
+          </div>
         </div>
+
+        {/* Template Picker Dialog */}
+        <Dialog open={showTemplatePicker} onOpenChange={setShowTemplatePicker}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>选择检查模板</DialogTitle>
+              <DialogDescription>选择一个内置模板快速创建检查清单，或上传Excel导入自定义检查项</DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-3 mt-2">
+              {BUILTIN_TEMPLATES.map((tpl) => (
+                <Card
+                  key={tpl.id}
+                  className="cursor-pointer hover:shadow-card-hover hover:border-primary/40 transition-all"
+                  onClick={() => createFromTemplate(tpl)}
+                >
+                  <CardContent className="flex items-start gap-4 p-4">
+                    <div className="rounded-lg bg-primary/10 p-2.5 mt-0.5">
+                      <BookTemplate className="w-5 h-5 text-primary" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h4 className="font-semibold text-foreground">{tpl.name}</h4>
+                      <p className="text-xs text-muted-foreground mt-1">{tpl.description}</p>
+                      <Badge variant="secondary" className="mt-2 text-[10px]">{tpl.items.length} 个检查项</Badge>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+              <label>
+                <input type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={(e) => { setShowTemplatePicker(false); handleExcelUpload(e); }} />
+                <Card className="cursor-pointer hover:shadow-card-hover hover:border-primary/40 transition-all border-dashed">
+                  <CardContent className="flex items-start gap-4 p-4">
+                    <div className="rounded-lg bg-muted p-2.5 mt-0.5">
+                      <Upload className="w-5 h-5 text-muted-foreground" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h4 className="font-semibold text-foreground">从Excel导入</h4>
+                      <p className="text-xs text-muted-foreground mt-1">上传包含「分类、检查项、说明、严重程度」列的Excel文件</p>
+                    </div>
+                  </CardContent>
+                </Card>
+              </label>
+            </div>
+          </DialogContent>
+        </Dialog>
 
         {checklists.length === 0 ? (
           <Card className="border-dashed">
@@ -372,9 +418,9 @@ const TechnicalBidCheck = () => {
               <ClipboardList className="w-12 h-12 text-muted-foreground/40 mb-4" />
               <h3 className="text-lg font-semibold text-foreground mb-2">暂无检查清单</h3>
               <p className="text-sm text-muted-foreground mb-6 max-w-md">
-                创建一份质量检查清单，系统将预置常用检查项，您也可以自定义添加
+                选择内置模板或上传Excel，快速创建质量检查清单
               </p>
-              <Button onClick={createNewChecklist} className="gap-1.5">
+              <Button onClick={() => setShowTemplatePicker(true)} className="gap-1.5">
                 <Plus className="w-4 h-4" />
                 创建第一份检查清单
               </Button>
