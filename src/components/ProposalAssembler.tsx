@@ -678,7 +678,7 @@ export default function ProposalAssembler({ proposalId, sections, onEnterWorkspa
     return (text.toLowerCase().match(/[a-z0-9]+|[\u4e00-\u9fa5]{2,}/gi) || []).filter(t => t.length >= 2);
   };
 
-  const computeScore = (sectionTitle: string, mat: MaterialItem): number => {
+  const computeScore = useCallback((sectionTitle: string, mat: MaterialItem): number => {
     const sectionKw = extractKeywords(sectionTitle);
     if (sectionKw.length === 0) return 0;
     const matText = `${mat.file_name} ${mat.content_description || ""} ${mat.material_type || ""}`.toLowerCase();
@@ -697,7 +697,7 @@ export default function ProposalAssembler({ proposalId, sections, onEnterWorkspa
       score += 10;
     }
     return score;
-  };
+  }, []);
 
   const getSelectedSectionTitle = (): string => {
     if (!selectedSectionId) return "";
@@ -724,6 +724,43 @@ export default function ProposalAssembler({ proposalId, sections, onEnterWorkspa
   }
 
   const matchedCount = scoredMaterials.filter(s => s.score > 0).length;
+
+  // ─── Auto-assemble: match materials to sections by title similarity ──
+  const handleAutoAssemble = useCallback(() => {
+    const flat = flattenTree(sections);
+    const usedMatIds = new Set<string>();
+    const newAssembly: AssemblyMapping = { ...assembly };
+
+    // For each section, find the best matching material(s) not yet used
+    const MIN_SCORE = 5;
+    for (const { section } of flat) {
+      const sectionTitle = `${section.section_number || ""} ${section.title}`;
+      // Score all unused materials
+      const scored = materials
+        .filter(m => !usedMatIds.has(m.id))
+        .map(m => ({ mat: m, score: computeScore(sectionTitle, m) }))
+        .filter(s => s.score >= MIN_SCORE)
+        .sort((a, b) => b.score - a.score);
+
+      if (scored.length === 0) continue;
+
+      // Take the best match (only top 1 to avoid over-filling)
+      const best = scored[0];
+      const existing = newAssembly[section.id] || [];
+      if (!existing.some(m => m.id === best.mat.id)) {
+        newAssembly[section.id] = [...existing, best.mat];
+        usedMatIds.add(best.mat.id);
+      }
+    }
+
+    const newCount = Object.values(newAssembly).flat().length;
+    const prevCount = Object.values(assembly).flat().length;
+    setAssembly(newAssembly);
+    toast({
+      title: "自动拼装完成",
+      description: `已匹配 ${newCount - prevCount} 个材料到对应章节，可手动调整`,
+    });
+  }, [sections, materials, assembly, computeScore, toast]);
 
   const totalAssembled = Object.values(assembly).flat().length;
 
@@ -879,6 +916,15 @@ export default function ProposalAssembler({ proposalId, sections, onEnterWorkspa
           )}
         </div>
         <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleAutoAssemble}
+            disabled={downloading || materials.length === 0}
+          >
+            <Zap className="w-4 h-4 mr-1" />
+            自动拼装
+          </Button>
           <Button
             variant="outline"
             size="sm"
