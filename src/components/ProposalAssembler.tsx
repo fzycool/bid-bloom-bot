@@ -9,7 +9,7 @@ import { useToast } from "@/hooks/use-toast";
 import {
   FileText, ChevronRight, ChevronDown, Download, Loader2,
   GripVertical, Trash2, FolderOpen, ArrowRight, Package,
-  ChevronLeft, Search,
+  ChevronLeft, Search, Zap, Star,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import JSZip from "jszip";
@@ -74,6 +74,7 @@ export default function ProposalAssembler({ proposalId, sections, onEnterWorkspa
   const [downloading, setDownloading] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedProject, setSelectedProject] = useState<string | "all">("all");
+  const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
 
   // Fetch extracted DOCX materials
   const fetchMaterials = useCallback(async () => {
@@ -452,13 +453,67 @@ export default function ProposalAssembler({ proposalId, sections, onEnterWorkspa
     return matchesSearch && matchesProject;
   });
 
-  // Group by project
+  // Group by project (used when no section selected)
   const groupedMaterials = new Map<string, MaterialItem[]>();
   for (const m of filteredMaterials) {
     const key = m.project_name || "通用材料";
     if (!groupedMaterials.has(key)) groupedMaterials.set(key, []);
     groupedMaterials.get(key)!.push(m);
   }
+
+  // ─── Similarity scoring ─────────────────────────────────────────
+
+  const extractKeywords = (text: string): string[] => {
+    if (!text) return [];
+    return (text.toLowerCase().match(/[a-z0-9]+|[\u4e00-\u9fa5]{2,}/gi) || []).filter(t => t.length >= 2);
+  };
+
+  const computeScore = (sectionTitle: string, mat: MaterialItem): number => {
+    const sectionKw = extractKeywords(sectionTitle);
+    if (sectionKw.length === 0) return 0;
+    const matText = `${mat.file_name} ${mat.content_description || ""} ${mat.material_type || ""}`.toLowerCase();
+    const matKw = extractKeywords(matText);
+    let score = 0;
+    for (const kw of sectionKw) {
+      if (matText.includes(kw)) score += 3;
+      for (const mk of matKw) {
+        if (mk === kw) { score += 5; break; }
+        if (mk.includes(kw) || kw.includes(mk)) { score += 2; break; }
+      }
+    }
+    const cleanTitle = sectionTitle.replace(/[\d.、\s]/g, "").toLowerCase();
+    const cleanFileName = mat.file_name.replace(/\.\w+$/, "").replace(/[\d._\s]/g, "").toLowerCase();
+    if (cleanFileName && cleanTitle && (cleanFileName.includes(cleanTitle) || cleanTitle.includes(cleanFileName))) {
+      score += 10;
+    }
+    return score;
+  };
+
+  const getSelectedSectionTitle = (): string => {
+    if (!selectedSectionId) return "";
+    const find = (nodes: ProposalSection[]): ProposalSection | null => {
+      for (const n of nodes) {
+        if (n.id === selectedSectionId) return n;
+        if (n.children) { const f = find(n.children); if (f) return f; }
+      }
+      return null;
+    };
+    const s = find(sections);
+    return s ? `${s.section_number || ""} ${s.title}` : "";
+  };
+
+  const selectedTitle = getSelectedSectionTitle();
+
+  const scoredMaterials = filteredMaterials.map(mat => ({
+    mat,
+    score: selectedSectionId ? computeScore(selectedTitle, mat) : 0,
+  }));
+
+  if (selectedSectionId) {
+    scoredMaterials.sort((a, b) => b.score - a.score);
+  }
+
+  const matchedCount = scoredMaterials.filter(s => s.score > 0).length;
 
   const totalAssembled = Object.values(assembly).flat().length;
 
@@ -482,8 +537,13 @@ export default function ProposalAssembler({ proposalId, sections, onEnterWorkspa
           onDrop={(e) => handleDrop(e, section.id)}
         >
           <button
-            onClick={() => toggleSection(section.id)}
-            className="flex-1 text-left flex items-start gap-1.5 px-2 py-2 rounded hover:bg-secondary transition-colors min-w-0"
+            onClick={() => {
+              toggleSection(section.id);
+              setSelectedSectionId(section.id);
+            }}
+            className={`flex-1 text-left flex items-start gap-1.5 px-2 py-2 rounded transition-colors min-w-0 ${
+              selectedSectionId === section.id ? "bg-accent/10 hover:bg-accent/15" : "hover:bg-secondary"
+            }`}
           >
             {hasChildren ? (
               isExpanded ? <ChevronDown className="w-4 h-4 mt-0.5 shrink-0 text-muted-foreground" /> : <ChevronRight className="w-4 h-4 mt-0.5 shrink-0 text-muted-foreground" />
@@ -614,7 +674,24 @@ export default function ProposalAssembler({ proposalId, sections, onEnterWorkspa
             <CardTitle className="text-sm flex items-center gap-2">
               <FolderOpen className="w-4 h-4" />
               公司材料库
-              <span className="text-muted-foreground font-normal text-xs">（拖动到左侧章节）</span>
+              {selectedSectionId && matchedCount > 0 ? (
+                <Badge variant="default" className="text-[10px] gap-1">
+                  <Zap className="w-3 h-3" />
+                  {matchedCount} 个匹配
+                </Badge>
+              ) : (
+                <span className="text-muted-foreground font-normal text-xs">（拖动到左侧章节）</span>
+              )}
+              {selectedSectionId && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="ml-auto h-6 text-[10px] text-muted-foreground"
+                  onClick={() => setSelectedSectionId(null)}
+                >
+                  清除筛选
+                </Button>
+              )}
             </CardTitle>
           </CardHeader>
           <CardContent className="flex-1 min-h-0 p-0 flex flex-col">
@@ -663,7 +740,54 @@ export default function ProposalAssembler({ proposalId, sections, onEnterWorkspa
                   <p className="text-xs">暂无可用的DOCX材料</p>
                   <p className="text-[10px] mt-1">请先在公司材料库中通过"材料提取"功能提取章节</p>
                 </div>
+              ) : selectedSectionId ? (
+                /* Scored view: flat list sorted by relevance */
+                <div className="space-y-1">
+                  {matchedCount > 0 && (
+                    <p className="text-xs font-medium text-accent mb-2 px-1 flex items-center gap-1">
+                      <Star className="w-3 h-3" />
+                      推荐匹配（点击章节自动筛选）
+                    </p>
+                  )}
+                  {scoredMaterials.map(({ mat, score }) => {
+                    const isAssigned = Object.values(assembly).some(mats => mats.some(m => m.id === mat.id));
+                    const isMatched = score > 0;
+                    return (
+                      <div
+                        key={mat.id}
+                        draggable
+                        onDragStart={() => handleDragStart(mat)}
+                        onDragEnd={() => setDraggedMaterial(null)}
+                        className={`flex items-center gap-2 px-2.5 py-2 rounded-lg border cursor-grab active:cursor-grabbing transition-all hover:border-accent/50 hover:shadow-sm ${
+                          isMatched ? "bg-accent/10 border-accent/40 shadow-sm" : isAssigned ? "bg-accent/5 border-accent/30" : "border-border bg-card opacity-60"
+                        } ${draggedMaterial?.id === mat.id ? "opacity-50 scale-95" : ""}`}
+                      >
+                        <GripVertical className="w-3.5 h-3.5 text-muted-foreground/50 shrink-0" />
+                        {isMatched ? (
+                          <Star className="w-3.5 h-3.5 text-accent shrink-0 fill-accent" />
+                        ) : (
+                          <FileText className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-medium text-foreground truncate">{mat.file_name}</p>
+                          {mat.content_description && (
+                            <p className="text-[10px] text-muted-foreground truncate">{mat.content_description}</p>
+                          )}
+                        </div>
+                        {isMatched && (
+                          <Badge variant="default" className="text-[10px] shrink-0 gap-0.5">
+                            <Zap className="w-2.5 h-2.5" />{Math.min(score, 99)}
+                          </Badge>
+                        )}
+                        {isAssigned && (
+                          <Badge variant="secondary" className="text-[10px] shrink-0">已分配</Badge>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               ) : (
+                /* Grouped view: by project */
                 <div className="space-y-3">
                   {Array.from(groupedMaterials.entries()).map(([projectName, items]) => (
                     <div key={projectName}>
@@ -672,7 +796,6 @@ export default function ProposalAssembler({ proposalId, sections, onEnterWorkspa
                       </p>
                       <div className="space-y-1">
                         {items.map(mat => {
-                          // Check if already assigned somewhere
                           const isAssigned = Object.values(assembly).some(mats => mats.some(m => m.id === mat.id));
                           return (
                             <div
