@@ -587,38 +587,15 @@ export default function ProposalAssembler({ proposalId, sections, onEnterWorkspa
 
     setDownloading(true);
     try {
-      // For each section with assigned materials, extract text and save as content
+      // For each section with assigned materials, save material references for XML-level export
       for (const [sectionId, mats] of Object.entries(assembly)) {
-        let combinedText = "";
-        for (const mat of mats) {
-          const { data } = await supabase.storage
-            .from("company-materials")
-            .download(mat.file_path);
-          if (!data) continue;
-          const zip = await JSZip.loadAsync(data);
-          const docXml = await zip.file("word/document.xml")?.async("string");
-          if (!docXml) continue;
-          // Extract text
-          const text = docXml
-            .replace(/<w:tab\/>/g, "\t")
-            .replace(/<w:br[^>]*\/>/g, "\n")
-            .replace(/<\/w:p>/g, "\n")
-            .replace(/<[^>]+>/g, "")
-            .replace(/&lt;/g, "<")
-            .replace(/&gt;/g, ">")
-            .replace(/&amp;/g, "&")
-            .replace(/&apos;/g, "'")
-            .replace(/&quot;/g, '"')
-            .trim();
-          if (text) {
-            combinedText += `【来源：公司材料库（原样移植） - ${mat.file_name}】\n${text}\n\n`;
-          }
-        }
-        if (combinedText) {
-          await supabase.from("proposal_sections").update({
-            content: combinedText.trim(),
-          }).eq("id", sectionId);
-        }
+        const materialRefs = mats.map(m => ({ file_path: m.file_path, file_name: m.file_name }));
+        const previewText = mats.map(m => `📄 ${m.file_name}`).join("\n");
+        await supabase.from("proposal_sections").update({
+          content: previewText,
+          source_type: "material_assembly",
+          source_id: JSON.stringify(materialRefs),
+        }).eq("id", sectionId);
       }
 
       toast({ title: "已同步到工作台", description: "拼凑内容已写入各章节，可进入编写工作台修改" });
