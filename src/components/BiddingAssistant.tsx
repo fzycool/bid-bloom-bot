@@ -33,6 +33,7 @@ import TocDragEditor from "@/components/TocDragEditor";
 import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType, Header, Footer, LevelFormat, convertInchesToTwip, LevelSuffix } from "docx";
 import { saveAs } from "file-saver";
 import JSZip from "jszip";
+import ProposalAssembler from "@/components/ProposalAssembler";
 
 interface HeadingStyle {
   font?: string;
