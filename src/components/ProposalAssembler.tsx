@@ -674,7 +674,24 @@ export default function ProposalAssembler({ proposalId, sections, onEnterWorkspa
             <CardTitle className="text-sm flex items-center gap-2">
               <FolderOpen className="w-4 h-4" />
               公司材料库
-              <span className="text-muted-foreground font-normal text-xs">（拖动到左侧章节）</span>
+              {selectedSectionId && matchedCount > 0 ? (
+                <Badge variant="default" className="text-[10px] gap-1">
+                  <Zap className="w-3 h-3" />
+                  {matchedCount} 个匹配
+                </Badge>
+              ) : (
+                <span className="text-muted-foreground font-normal text-xs">（拖动到左侧章节）</span>
+              )}
+              {selectedSectionId && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="ml-auto h-6 text-[10px] text-muted-foreground"
+                  onClick={() => setSelectedSectionId(null)}
+                >
+                  清除筛选
+                </Button>
+              )}
             </CardTitle>
           </CardHeader>
           <CardContent className="flex-1 min-h-0 p-0 flex flex-col">
@@ -723,7 +740,54 @@ export default function ProposalAssembler({ proposalId, sections, onEnterWorkspa
                   <p className="text-xs">暂无可用的DOCX材料</p>
                   <p className="text-[10px] mt-1">请先在公司材料库中通过"材料提取"功能提取章节</p>
                 </div>
+              ) : selectedSectionId ? (
+                /* Scored view: flat list sorted by relevance */
+                <div className="space-y-1">
+                  {matchedCount > 0 && (
+                    <p className="text-xs font-medium text-accent mb-2 px-1 flex items-center gap-1">
+                      <Star className="w-3 h-3" />
+                      推荐匹配（点击章节自动筛选）
+                    </p>
+                  )}
+                  {scoredMaterials.map(({ mat, score }) => {
+                    const isAssigned = Object.values(assembly).some(mats => mats.some(m => m.id === mat.id));
+                    const isMatched = score > 0;
+                    return (
+                      <div
+                        key={mat.id}
+                        draggable
+                        onDragStart={() => handleDragStart(mat)}
+                        onDragEnd={() => setDraggedMaterial(null)}
+                        className={`flex items-center gap-2 px-2.5 py-2 rounded-lg border cursor-grab active:cursor-grabbing transition-all hover:border-accent/50 hover:shadow-sm ${
+                          isMatched ? "bg-accent/10 border-accent/40 shadow-sm" : isAssigned ? "bg-accent/5 border-accent/30" : "border-border bg-card opacity-60"
+                        } ${draggedMaterial?.id === mat.id ? "opacity-50 scale-95" : ""}`}
+                      >
+                        <GripVertical className="w-3.5 h-3.5 text-muted-foreground/50 shrink-0" />
+                        {isMatched ? (
+                          <Star className="w-3.5 h-3.5 text-accent shrink-0 fill-accent" />
+                        ) : (
+                          <FileText className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-medium text-foreground truncate">{mat.file_name}</p>
+                          {mat.content_description && (
+                            <p className="text-[10px] text-muted-foreground truncate">{mat.content_description}</p>
+                          )}
+                        </div>
+                        {isMatched && (
+                          <Badge variant="default" className="text-[10px] shrink-0 gap-0.5">
+                            <Zap className="w-2.5 h-2.5" />{Math.min(score, 99)}
+                          </Badge>
+                        )}
+                        {isAssigned && (
+                          <Badge variant="secondary" className="text-[10px] shrink-0">已分配</Badge>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               ) : (
+                /* Grouped view: by project */
                 <div className="space-y-3">
                   {Array.from(groupedMaterials.entries()).map(([projectName, items]) => (
                     <div key={projectName}>
@@ -732,7 +796,6 @@ export default function ProposalAssembler({ proposalId, sections, onEnterWorkspa
                       </p>
                       <div className="space-y-1">
                         {items.map(mat => {
-                          // Check if already assigned somewhere
                           const isAssigned = Object.values(assembly).some(mats => mats.some(m => m.id === mat.id));
                           return (
                             <div
