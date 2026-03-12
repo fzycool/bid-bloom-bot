@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
+import TechCheckProjects from "@/components/TechCheckProjects";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -349,23 +350,9 @@ const TechnicalBidCheck = () => {
   if (!activeList) {
     return (
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-xl font-bold text-foreground">技术标质量检查</h2>
-            <p className="text-sm text-muted-foreground mt-1">创建检查清单，逐项确认标书质量</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button onClick={() => setShowTemplatePicker(true)} className="gap-1.5">
-              <Plus className="w-4 h-4" />
-              新建检查清单
-            </Button>
-            <label>
-              <input type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleExcelUpload} />
-              <Button variant="outline" className="gap-1.5" asChild>
-                <span><Upload className="w-4 h-4" />导入Excel</span>
-              </Button>
-            </label>
-          </div>
+        <div>
+          <h2 className="text-xl font-bold text-foreground">技术标质量检查</h2>
+          <p className="text-sm text-muted-foreground mt-1">管理质检项目，上传招标文件和技术方案，逐项确认标书质量</p>
         </div>
 
         {/* Template Picker Dialog */}
@@ -411,6 +398,22 @@ const TechnicalBidCheck = () => {
             </div>
           </DialogContent>
         </Dialog>
+
+        {/* Project list */}
+        <TechCheckProjects />
+
+        {/* Separator */}
+        <div className="border-t pt-4">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-foreground">检查清单</h3>
+            <div className="flex items-center gap-2">
+              <Button onClick={() => setShowTemplatePicker(true)} size="sm" variant="outline" className="gap-1.5">
+                <Plus className="w-4 h-4" />
+                新建清单
+              </Button>
+            </div>
+          </div>
+        </div>
 
         {checklists.length === 0 ? (
           <Card className="border-dashed">
