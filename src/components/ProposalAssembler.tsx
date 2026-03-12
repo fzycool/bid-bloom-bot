@@ -291,7 +291,7 @@ export default function ProposalAssembler({ proposalId, sections, onEnterWorkspa
     });
   };
 
-
+  const toggleSection = (id: string) => {
     setExpandedSections(prev => {
       const next = new Set(prev);
       next.has(id) ? next.delete(id) : next.add(id);
