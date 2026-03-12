@@ -148,6 +148,7 @@ const Dashboard = () => {
           {activeModule === "audit" && <HolographicAudit />}
           {activeModule === "materials" && <CompanyMaterials />}
           {activeModule === "templates" && <ResumeTemplates />}
+          {activeModule === "techcheck" && <TechnicalBidCheck />}
           
           {activeModule === "admin" && isAdmin && <BackendManagement />}
         </main>
