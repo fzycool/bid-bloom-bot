@@ -160,35 +160,15 @@ export default function ProposalAssembler({ proposalId, sections, onEnterWorkspa
       setAutoSaving(true);
       try {
         for (const [sectionId, mats] of entries) {
-          let combinedText = "";
-          for (const mat of mats) {
-            const { data } = await supabase.storage
-              .from("company-materials")
-              .download(mat.file_path);
-            if (!data) continue;
-            const zip = await JSZip.loadAsync(data);
-            const docXml = await zip.file("word/document.xml")?.async("string");
-            if (!docXml) continue;
-            const text = docXml
-              .replace(/<w:tab\/>/g, "\t")
-              .replace(/<w:br[^>]*\/>/g, "\n")
-              .replace(/<\/w:p>/g, "\n")
-              .replace(/<[^>]+>/g, "")
-              .replace(/&lt;/g, "<")
-              .replace(/&gt;/g, ">")
-              .replace(/&amp;/g, "&")
-              .replace(/&apos;/g, "'")
-              .replace(/&quot;/g, '"')
-              .trim();
-            if (text) {
-              combinedText += `【来源：公司材料库（原样移植） - ${mat.file_name}】\n${text}\n\n`;
-            }
-          }
-          if (combinedText) {
-            await supabase.from("proposal_sections").update({
-              content: combinedText.trim(),
-            }).eq("id", sectionId);
-          }
+          // Store material file paths as JSON metadata for XML-level export
+          const materialRefs = mats.map(m => ({ file_path: m.file_path, file_name: m.file_name }));
+          // Also generate a text preview for the workspace editor
+          let previewText = mats.map(m => `📄 ${m.file_name}`).join("\n");
+          await supabase.from("proposal_sections").update({
+            content: previewText,
+            source_type: "material_assembly",
+            source_id: JSON.stringify(materialRefs),
+          }).eq("id", sectionId);
         }
         console.log("[AutoSave] Assembly saved to proposal_sections");
       } catch (err: any) {
