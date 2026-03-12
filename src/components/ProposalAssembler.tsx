@@ -235,7 +235,7 @@ export default function ProposalAssembler({ proposalId, sections, onEnterWorkspa
     return () => {
       if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
     };
-  }, [assembly]);
+  }, [assembly, buildWorkspaceContent]);
 
 
 
