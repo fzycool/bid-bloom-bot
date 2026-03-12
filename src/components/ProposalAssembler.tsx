@@ -72,6 +72,9 @@ export default function ProposalAssembler({ proposalId, sections, onEnterWorkspa
   const [draggedMaterial, setDraggedMaterial] = useState<MaterialItem | null>(null);
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
+  // For reordering assigned materials within sections
+  const [reorderDrag, setReorderDrag] = useState<{ sectionId: string; matId: string } | null>(null);
+  const [reorderDropIndex, setReorderDropIndex] = useState<{ sectionId: string; index: number } | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedProject, setSelectedProject] = useState<string | "all">("all");
   const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
