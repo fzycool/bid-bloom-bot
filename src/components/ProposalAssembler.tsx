@@ -405,6 +405,18 @@ export default function ProposalAssembler({ proposalId, sections, onEnterWorkspa
         }
       }
 
+      // Merge all collected namespaces into the document root element
+      const docTagMatch = docPrefix.match(/<w:document([^>]*)>/);
+      if (docTagMatch) {
+        let docAttrs = docTagMatch[1];
+        for (const ns of nsSet) {
+          if (!docAttrs.includes(ns)) {
+            docAttrs += ` ${ns}`;
+          }
+        }
+        docPrefix = docPrefix.replace(/<w:document[^>]*>/, `<w:document${docAttrs}>`);
+      }
+
       // Build final document.xml
       const finalDocXml = docPrefix + combinedBody + sectPr + docSuffix;
       outZip.file("word/document.xml", finalDocXml);
