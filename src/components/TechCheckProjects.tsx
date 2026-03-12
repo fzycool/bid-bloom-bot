@@ -148,22 +148,37 @@ const TechCheckProjects = () => {
     let failCount = 0;
     const failDetails: { name: string; reason: string }[] = [];
 
-    for (const file of uploadFiles) {
+    setUploadProgress({ current: 0, total: uploadFiles.length, currentFileName: "", failLogs: [], successCount: 0 });
+
+    for (let i = 0; i < uploadFiles.length; i++) {
+      const file = uploadFiles[i];
+      setUploadProgress((prev) => prev && ({
+        ...prev,
+        current: i,
+        currentFileName: file.name,
+      }));
+
       // Validate file type
       const ext = file.name.split(".").pop()?.toLowerCase() || "";
       if (category === "bid_document" && !["pdf", "docx", "doc"].includes(ext)) {
         failCount++;
-        failDetails.push({ name: file.name, reason: `格式不支持（.${ext}），仅支持 PDF/Word` });
+        const detail = { name: file.name, reason: `格式不支持（.${ext}），仅支持 PDF/Word` };
+        failDetails.push(detail);
+        setUploadProgress((prev) => prev && ({ ...prev, failLogs: [...prev.failLogs, detail] }));
         continue;
       }
       if (category === "technical_proposal" && !["docx", "doc"].includes(ext)) {
         failCount++;
-        failDetails.push({ name: file.name, reason: `格式不支持（.${ext}），仅支持 Word` });
+        const detail = { name: file.name, reason: `格式不支持（.${ext}），仅支持 Word` };
+        failDetails.push(detail);
+        setUploadProgress((prev) => prev && ({ ...prev, failLogs: [...prev.failLogs, detail] }));
         continue;
       }
       if (file.size > 50 * 1024 * 1024) {
         failCount++;
-        failDetails.push({ name: file.name, reason: `文件大小 ${formatSize(file.size)} 超过 50MB 限制` });
+        const detail = { name: file.name, reason: `文件大小 ${formatSize(file.size)} 超过 50MB 限制` };
+        failDetails.push(detail);
+        setUploadProgress((prev) => prev && ({ ...prev, failLogs: [...prev.failLogs, detail] }));
         continue;
       }
 
@@ -174,7 +189,9 @@ const TechCheckProjects = () => {
 
       if (uploadErr) {
         failCount++;
-        failDetails.push({ name: file.name, reason: `存储上传失败：${uploadErr.message}` });
+        const detail = { name: file.name, reason: `存储上传失败：${uploadErr.message}` };
+        failDetails.push(detail);
+        setUploadProgress((prev) => prev && ({ ...prev, failLogs: [...prev.failLogs, detail] }));
         continue;
       }
 
@@ -194,15 +211,22 @@ const TechCheckProjects = () => {
 
       if (insertErr) {
         failCount++;
-        failDetails.push({ name: file.name, reason: `记录保存失败：${insertErr.message}` });
+        const detail = { name: file.name, reason: `记录保存失败：${insertErr.message}` };
+        failDetails.push(detail);
+        setUploadProgress((prev) => prev && ({ ...prev, failLogs: [...prev.failLogs, detail] }));
         continue;
       }
 
       setFiles((prev) => [fileRow as TechCheckFile, ...prev]);
       successCount++;
+      setUploadProgress((prev) => prev && ({ ...prev, successCount }));
     }
 
     setUploading(null);
+
+    // Keep progress visible for a moment then clear
+    setUploadProgress((prev) => prev && ({ ...prev, current: uploadFiles.length, currentFileName: "" }));
+    setTimeout(() => setUploadProgress(null), failDetails.length > 0 ? 10000 : 3000);
 
     // 汇总提示（含失败原因）
     const totalFiles = uploadFiles.length;
