@@ -329,6 +329,14 @@ export default function ProposalAssembler({ proposalId, sections, onEnterWorkspa
             const docFile = matZip.file("word/document.xml");
             if (!docFile) continue;
             matDocXml = await docFile.async("string");
+
+            // Collect namespaces from this material's document root
+            const matDocTag = matDocXml.match(/<w:document[^>]*>/);
+            if (matDocTag) {
+              let nsmm: RegExpExecArray | null;
+              const matNsRe = /xmlns:\w+="[^"]+"/g;
+              while ((nsmm = matNsRe.exec(matDocTag[0])) !== null) nsSet.add(nsmm[0]);
+            }
           }
 
           // Extract body content
