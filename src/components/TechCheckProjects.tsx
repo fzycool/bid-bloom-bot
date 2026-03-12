@@ -2,10 +2,12 @@ import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Plus,
   Trash2,
@@ -17,6 +19,9 @@ import {
   Check,
   FileType2,
   File,
+  AlertCircle,
+  CheckCircle2,
+  Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -38,6 +43,14 @@ interface TechCheckFile {
   created_at: string;
 }
 
+interface FileUploadStatus {
+  fileName: string;
+  fileSize: number;
+  status: "pending" | "uploading" | "success" | "error";
+  progress: number; // 0-100
+  error?: string;
+}
+
 const ACCEPTED_BID = ".pdf,.docx,.doc";
 const ACCEPTED_PROPOSAL = ".docx,.doc";
 
@@ -56,13 +69,13 @@ const TechCheckProjects = () => {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [uploading, setUploading] = useState<string | null>(null);
-  const [uploadProgress, setUploadProgress] = useState<{
-    current: number;
-    total: number;
-    currentFileName: string;
-    failLogs: { name: string; reason: string }[];
-    successCount: number;
-  } | null>(null);
+
+  // Per-file upload tracking
+  const [fileStatuses, setFileStatuses] = useState<FileUploadStatus[]>([]);
+  // Error dialog
+  const [errorLogs, setErrorLogs] = useState<{ name: string; reason: string }[]>([]);
+  const [showErrorDialog, setShowErrorDialog] = useState(false);
+
   const bidInputRef = useRef<HTMLInputElement>(null);
   const proposalInputRef = useRef<HTMLInputElement>(null);
   const uploadProjectRef = useRef<string | null>(null);
@@ -105,7 +118,6 @@ const TechCheckProjects = () => {
   };
 
   const deleteProject = async (id: string) => {
-    // Delete associated files from storage first
     const projFiles = files.filter((f) => f.project_id === id);
     if (projFiles.length > 0) {
       await supabase.storage
@@ -134,6 +146,17 @@ const TechCheckProjects = () => {
     toast.success("已重命名");
   };
 
+  const updateFileStatus = (index: number, update: Partial<FileUploadStatus>) => {
+    setFileStatuses((prev) =>
+      prev.map((s, i) => (i === index ? { ...s, ...update } : s))
+    );
+  };
+
+  const addErrorLog = (name: string, reason: string) => {
+    setErrorLogs((prev) => [...prev, { name, reason }]);
+    setShowErrorDialog(true);
+  };
+
   const handleUpload = async (
     e: React.ChangeEvent<HTMLInputElement>,
     projectId: string,
@@ -144,44 +167,44 @@ const TechCheckProjects = () => {
     e.target.value = "";
 
     setUploading(projectId);
+    setErrorLogs([]);
+    setShowErrorDialog(false);
     const categoryLabel = category === "bid_document" ? "招标文件" : "技术方案";
-    let successCount = 0;
-    let failCount = 0;
-    const failDetails: { name: string; reason: string }[] = [];
 
-    setUploadProgress({ current: 0, total: uploadFiles.length, currentFileName: "", failLogs: [], successCount: 0 });
+    // Initialize per-file statuses
+    const initialStatuses: FileUploadStatus[] = uploadFiles.map((f) => ({
+      fileName: f.name,
+      fileSize: f.size,
+      status: "pending",
+      progress: 0,
+    }));
+    setFileStatuses(initialStatuses);
+
+    let successCount = 0;
 
     for (let i = 0; i < uploadFiles.length; i++) {
       const file = uploadFiles[i];
-      setUploadProgress((prev) => prev && ({
-        ...prev,
-        current: i,
-        currentFileName: file.name,
-      }));
+      updateFileStatus(i, { status: "uploading", progress: 10 });
 
       // Validate file type
       const ext = file.name.split(".").pop()?.toLowerCase() || "";
       if (category === "bid_document" && !["pdf", "docx", "doc"].includes(ext)) {
-        failCount++;
-        const detail = { name: file.name, reason: `格式不支持（.${ext}），仅支持 PDF/Word` };
-        failDetails.push(detail);
-        setUploadProgress((prev) => prev && ({ ...prev, failLogs: [...prev.failLogs, detail] }));
+        updateFileStatus(i, { status: "error", progress: 100, error: `格式不支持（.${ext}），仅支持 PDF/Word` });
+        addErrorLog(file.name, `格式不支持（.${ext}），仅支持 PDF/Word`);
         continue;
       }
       if (category === "technical_proposal" && !["docx", "doc"].includes(ext)) {
-        failCount++;
-        const detail = { name: file.name, reason: `格式不支持（.${ext}），仅支持 Word` };
-        failDetails.push(detail);
-        setUploadProgress((prev) => prev && ({ ...prev, failLogs: [...prev.failLogs, detail] }));
+        updateFileStatus(i, { status: "error", progress: 100, error: `格式不支持（.${ext}），仅支持 Word` });
+        addErrorLog(file.name, `格式不支持（.${ext}），仅支持 Word`);
         continue;
       }
       if (file.size > 50 * 1024 * 1024) {
-        failCount++;
-        const detail = { name: file.name, reason: `文件大小 ${formatSize(file.size)} 超过 50MB 限制` };
-        failDetails.push(detail);
-        setUploadProgress((prev) => prev && ({ ...prev, failLogs: [...prev.failLogs, detail] }));
+        updateFileStatus(i, { status: "error", progress: 100, error: `文件大小 ${formatSize(file.size)} 超过 50MB 限制` });
+        addErrorLog(file.name, `文件大小 ${formatSize(file.size)} 超过 50MB 限制`);
         continue;
       }
+
+      updateFileStatus(i, { progress: 30 });
 
       const storagePath = `${user.id}/techcheck/${projectId}/${Date.now()}_${ext}`;
       const { error: uploadErr } = await supabase.storage
@@ -189,12 +212,12 @@ const TechCheckProjects = () => {
         .upload(storagePath, file, { contentType: file.type });
 
       if (uploadErr) {
-        failCount++;
-        const detail = { name: file.name, reason: `存储上传失败：${uploadErr.message}` };
-        failDetails.push(detail);
-        setUploadProgress((prev) => prev && ({ ...prev, failLogs: [...prev.failLogs, detail] }));
+        updateFileStatus(i, { status: "error", progress: 100, error: `存储上传失败：${uploadErr.message}` });
+        addErrorLog(file.name, `存储上传失败：${uploadErr.message}`);
         continue;
       }
+
+      updateFileStatus(i, { progress: 70 });
 
       const { data: fileRow, error: insertErr } = await supabase
         .from("techcheck_files")
@@ -211,40 +234,30 @@ const TechCheckProjects = () => {
         .single();
 
       if (insertErr) {
-        failCount++;
-        const detail = { name: file.name, reason: `记录保存失败：${insertErr.message}` };
-        failDetails.push(detail);
-        setUploadProgress((prev) => prev && ({ ...prev, failLogs: [...prev.failLogs, detail] }));
+        updateFileStatus(i, { status: "error", progress: 100, error: `记录保存失败：${insertErr.message}` });
+        addErrorLog(file.name, `记录保存失败：${insertErr.message}`);
         continue;
       }
 
       setFiles((prev) => [fileRow as TechCheckFile, ...prev]);
       successCount++;
-      setUploadProgress((prev) => prev && ({ ...prev, successCount }));
+      updateFileStatus(i, { status: "success", progress: 100 });
     }
 
     setUploading(null);
 
-    // Keep progress visible for a moment then clear
-    setUploadProgress((prev) => prev && ({ ...prev, current: uploadFiles.length, currentFileName: "" }));
-    setTimeout(() => setUploadProgress(null), failDetails.length > 0 ? 10000 : 3000);
+    // Auto-clear statuses after delay
+    const hasErrors = uploadFiles.length !== successCount;
+    setTimeout(() => setFileStatuses([]), hasErrors ? 15000 : 4000);
 
-    // 汇总提示（含失败原因）
+    // Summary toast
     const totalFiles = uploadFiles.length;
-    const failDescription = failDetails.map((d) => `• ${d.name}：${d.reason}`).join("\n");
-
     if (successCount === totalFiles) {
       toast.success(`🎉 全部上传成功！共上传 ${successCount} 个${categoryLabel}`);
-    } else if (successCount > 0 && failCount > 0) {
-      toast.warning(`⚠️ ${successCount} 个上传成功，${failCount} 个失败`, {
-        description: failDescription,
-        duration: 8000,
-      });
+    } else if (successCount > 0) {
+      toast.warning(`⚠️ ${successCount} 个上传成功，${totalFiles - successCount} 个失败`);
     } else {
-      toast.error(`❌ 上传失败！${failCount} 个文件未能上传`, {
-        description: failDescription,
-        duration: 8000,
-      });
+      toast.error(`❌ 全部上传失败！${totalFiles} 个文件未能上传`);
     }
   };
 
@@ -276,6 +289,15 @@ const TechCheckProjects = () => {
     return <File className="w-4 h-4 text-muted-foreground" />;
   };
 
+  const statusIcon = (status: FileUploadStatus["status"]) => {
+    switch (status) {
+      case "pending": return <div className="w-4 h-4 rounded-full border-2 border-muted-foreground/30 shrink-0" />;
+      case "uploading": return <Loader2 className="w-4 h-4 text-primary animate-spin shrink-0" />;
+      case "success": return <CheckCircle2 className="w-4 h-4 text-primary shrink-0" />;
+      case "error": return <AlertCircle className="w-4 h-4 text-destructive shrink-0" />;
+    }
+  };
+
   if (loading) {
     return (
       <Card className="p-8">
@@ -286,6 +308,42 @@ const TechCheckProjects = () => {
 
   return (
     <div className="space-y-4">
+      {/* Error Log Dialog */}
+      <Dialog open={showErrorDialog} onOpenChange={setShowErrorDialog}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <AlertCircle className="w-5 h-5" />
+              上传错误日志
+            </DialogTitle>
+            <DialogDescription>
+              以下文件在上传过程中出现错误，请检查后重试
+            </DialogDescription>
+          </DialogHeader>
+          <ScrollArea className="max-h-[400px]">
+            <div className="space-y-2 pr-2">
+              {errorLogs.map((log, idx) => (
+                <div
+                  key={idx}
+                  className="flex items-start gap-3 rounded-lg border border-destructive/20 bg-destructive/5 p-3"
+                >
+                  <AlertCircle className="w-4 h-4 text-destructive mt-0.5 shrink-0" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-foreground truncate">{log.name}</p>
+                    <p className="text-xs text-destructive/80 mt-0.5">{log.reason}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </ScrollArea>
+          <div className="flex justify-end pt-2">
+            <Button variant="outline" size="sm" onClick={() => setShowErrorDialog(false)}>
+              关闭
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <div className="flex items-center justify-between">
         <div>
           <h3 className="text-lg font-semibold text-foreground">质检项目</h3>
@@ -414,7 +472,7 @@ const TechCheckProjects = () => {
                           上传
                         </Button>
                       </div>
-                      {bidFiles.length === 0 ? (
+                      {bidFiles.length === 0 && !isUploading ? (
                         <div
                           className="border border-dashed rounded-lg p-4 text-center text-xs text-muted-foreground cursor-pointer hover:border-primary/40 hover:bg-primary/5 transition-colors"
                           onClick={() => triggerBidUpload(proj.id)}
@@ -461,7 +519,7 @@ const TechCheckProjects = () => {
                           上传
                         </Button>
                       </div>
-                      {proposalFiles.length === 0 ? (
+                      {proposalFiles.length === 0 && !isUploading ? (
                         <div
                           className="border border-dashed rounded-lg p-4 text-center text-xs text-muted-foreground cursor-pointer hover:border-primary/40 hover:bg-primary/5 transition-colors"
                           onClick={() => triggerProposalUpload(proj.id)}
@@ -489,42 +547,46 @@ const TechCheckProjects = () => {
                       )}
                     </div>
 
-                    {(isUploading || uploadProgress) && uploadProgress && (
+                    {/* Per-file upload progress */}
+                    {fileStatuses.length > 0 && (isUploading || fileStatuses.some(s => s.status !== "pending")) && (
                       <div className="space-y-2 rounded-lg border bg-muted/30 p-3">
-                        <div className="flex items-center justify-between text-xs text-muted-foreground">
-                          <span className="truncate max-w-[60%]">
-                            {uploadProgress.currentFileName
-                              ? `正在上传：${uploadProgress.currentFileName}`
-                              : uploadProgress.current >= uploadProgress.total
-                                ? "上传完成"
-                                : "准备上传..."}
-                          </span>
-                          <span className="shrink-0 font-medium">
-                            {Math.min(uploadProgress.current + (uploadProgress.currentFileName ? 1 : 0), uploadProgress.total)}/{uploadProgress.total}
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-xs font-medium text-foreground">上传进度</span>
+                          <span className="text-[11px] text-muted-foreground">
+                            {fileStatuses.filter(s => s.status === "success").length}/{fileStatuses.length} 完成
                           </span>
                         </div>
-                        <Progress
-                          value={((uploadProgress.current + (uploadProgress.currentFileName ? 0.5 : 0)) / uploadProgress.total) * 100}
-                          className="h-2"
-                        />
-                        {uploadProgress.successCount > 0 && (
-                          <div className="text-[11px] text-green-600">
-                            ✅ 已成功上传 {uploadProgress.successCount} 个文件
-                          </div>
-                        )}
-                        {uploadProgress.failLogs.length > 0 && (
-                          <div className="space-y-1 mt-1">
-                            <div className="text-[11px] font-medium text-destructive">
-                              ❌ 失败日志（{uploadProgress.failLogs.length} 个）：
+                        <div className="space-y-2.5">
+                          {fileStatuses.map((fs, idx) => (
+                            <div key={idx} className="space-y-1">
+                              <div className="flex items-center gap-2">
+                                {statusIcon(fs.status)}
+                                <span className="text-xs text-foreground flex-1 truncate">{fs.fileName}</span>
+                                <span className="text-[10px] text-muted-foreground shrink-0">{formatSize(fs.fileSize)}</span>
+                                <span className="text-[10px] font-medium text-muted-foreground shrink-0 w-8 text-right">
+                                  {fs.progress}%
+                                </span>
+                              </div>
+                              <Progress
+                                value={fs.progress}
+                                className={`h-1.5 ${fs.status === "error" ? "[&>div]:bg-destructive" : ""}`}
+                              />
+                              {fs.status === "error" && fs.error && (
+                                <p className="text-[10px] text-destructive pl-6">{fs.error}</p>
+                              )}
                             </div>
-                            <div className="max-h-32 overflow-y-auto space-y-0.5">
-                              {uploadProgress.failLogs.map((log, idx) => (
-                                <div key={idx} className="text-[11px] text-destructive/80 bg-destructive/5 rounded px-2 py-1">
-                                  <span className="font-medium">{log.name}</span>：{log.reason}
-                                </div>
-                              ))}
-                            </div>
-                          </div>
+                          ))}
+                        </div>
+                        {fileStatuses.some(s => s.status === "error") && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-7 text-xs gap-1 mt-2 text-destructive border-destructive/30 hover:bg-destructive/5"
+                            onClick={() => setShowErrorDialog(true)}
+                          >
+                            <AlertCircle className="w-3.5 h-3.5" />
+                            查看错误详情
+                          </Button>
                         )}
                       </div>
                     )}
