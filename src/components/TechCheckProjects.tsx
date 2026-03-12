@@ -131,8 +131,8 @@ const TechCheckProjects = () => {
     projectId: string,
     category: "bid_document" | "technical_proposal"
   ) => {
-    const uploadFiles = e.target.files;
-    if (!uploadFiles || !user) return;
+    const uploadFiles = Array.from(e.target.files || []);
+    if (uploadFiles.length === 0 || !user) return;
     e.target.value = "";
 
     setUploading(projectId);
@@ -141,7 +141,7 @@ const TechCheckProjects = () => {
     let failCount = 0;
     const failedFiles: string[] = [];
 
-    for (const file of Array.from(uploadFiles)) {
+    for (const file of uploadFiles) {
       // Validate file type
       const ext = file.name.split(".").pop()?.toLowerCase() || "";
       if (category === "bid_document" && !["pdf", "docx", "doc"].includes(ext)) {
