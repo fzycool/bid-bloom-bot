@@ -678,7 +678,7 @@ export default function ProposalAssembler({ proposalId, sections, onEnterWorkspa
     return (text.toLowerCase().match(/[a-z0-9]+|[\u4e00-\u9fa5]{2,}/gi) || []).filter(t => t.length >= 2);
   };
 
-  const computeScore = (sectionTitle: string, mat: MaterialItem): number => {
+  const computeScore = useCallback((sectionTitle: string, mat: MaterialItem): number => {
     const sectionKw = extractKeywords(sectionTitle);
     if (sectionKw.length === 0) return 0;
     const matText = `${mat.file_name} ${mat.content_description || ""} ${mat.material_type || ""}`.toLowerCase();
@@ -697,7 +697,7 @@ export default function ProposalAssembler({ proposalId, sections, onEnterWorkspa
       score += 10;
     }
     return score;
-  };
+  }, []);
 
   const getSelectedSectionTitle = (): string => {
     if (!selectedSectionId) return "";
