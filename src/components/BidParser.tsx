@@ -1178,10 +1178,16 @@ export default function BidParser() {
             像资深标书专员一样读题，自动提取评分表、废标项、陷阱项和关键词
           </p>
         </div>
-        <Button onClick={() => setShowForm(!showForm)} className="gap-2">
-          <Plus className="w-4 h-4" />
-          新建解析
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => exportBidParserDesignDoc()} className="gap-2">
+            <Download className="w-4 h-4" />
+            导出设计文档
+          </Button>
+          <Button onClick={() => setShowForm(!showForm)} className="gap-2">
+            <Plus className="w-4 h-4" />
+            新建解析
+          </Button>
+        </div>
       </div>
 
       {showForm && (
