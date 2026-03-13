@@ -237,7 +237,7 @@ export async function exportBidParserDesignDoc() {
           p("前端在加载解析列表时，自动检测长时间未更新的任务："),
           bullet("检测条件：ai_status 为 processing/analyzing_structure，且 updated_at 距今超过2分钟"),
           bullet("处理方式：自动将 ai_status 更新为 timeout"),
-          bullet("用户可通过"重新解析"按钮从 timeout 状态恢复"),
+          bullet("用户可通过\u201C重新解析\u201D按钮从 timeout 状态恢复"),
           p(""),
 
           h2("4.6 文件上传流程"),
