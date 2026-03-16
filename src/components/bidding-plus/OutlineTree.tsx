@@ -148,10 +148,16 @@ export default function OutlineTree({
       return localStorage.getItem("bidding_plus_custom_prompt") || DEFAULT_PROMPT;
     } catch { return DEFAULT_PROMPT; }
   });
+  const [promptSaved, setPromptSaved] = useState(false);
 
   const savePrompt = (val: string) => {
     setCustomPrompt(val);
-    try { localStorage.setItem("bidding_plus_custom_prompt", val); } catch {}
+  };
+
+  const persistPrompt = () => {
+    try { localStorage.setItem("bidding_plus_custom_prompt", customPrompt); } catch {}
+    setPromptSaved(true);
+    setTimeout(() => setPromptSaved(false), 2000);
   };
 
   return (
