@@ -10,48 +10,104 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import OutlineTree from "@/components/bidding-plus/OutlineTree";
-import DocumentViewer from "@/components/bidding-plus/DocumentViewer";
+import DocumentViewer, { type DocContent } from "@/components/bidding-plus/DocumentViewer";
 import AICommandInput from "@/components/bidding-plus/AICommandInput";
 import AddNodeDialog from "@/components/bidding-plus/AddNodeDialog";
 import { useOutlineTree } from "@/components/bidding-plus/useOutlineTree";
 import type { InsertPosition } from "@/components/bidding-plus/types";
 
-// Text extraction from blob
-async function extractTextFromBlob(blob: Blob, name: string): Promise<string> {
-  if (name.endsWith(".txt")) {
-    return await blob.text();
+/**
+ * Parse a blob into rich content (HTML for DOCX, page images for PDF).
+ * Also extracts plain text for AI operations.
+ */
+async function parseDocumentBlob(
+  blob: Blob,
+  name: string,
+  onProgress?: (msg: string) => void
+): Promise<{ content: DocContent; plainText: string }> {
+  const lower = name.toLowerCase();
+
+  // ---- DOCX → HTML via mammoth ----
+  if (lower.endsWith(".docx") || lower.endsWith(".doc")) {
+    onProgress?.("正在转换 DOCX 文档...");
+    const mammoth = await import("mammoth");
+    const arrayBuffer = await blob.arrayBuffer();
+
+    // Convert DOCX to HTML, embedding images as base64
+    const result = await mammoth.convertToHtml(
+      { arrayBuffer },
+      {
+        convertImage: mammoth.images.imgElement(async (image) => {
+          const buf = await image.read("base64");
+          const contentType = image.contentType || "image/png";
+          return { src: `data:${contentType};base64,${buf}` };
+        }),
+      }
+    );
+
+    // Also extract raw text for AI
+    const textResult = await mammoth.extractRawText({ arrayBuffer });
+
+    return {
+      content: { type: "html", html: result.value, plainText: textResult.value },
+      plainText: textResult.value,
+    };
   }
 
-  if (name.endsWith(".docx")) {
-    const JSZip = (await import("jszip")).default;
-    const zip = await JSZip.loadAsync(blob);
-    const docXml = await zip.file("word/document.xml")?.async("string");
-    if (!docXml) return "无法解析 DOCX 文件内容";
-    const text = docXml
-      .replace(/<w:t[^>]*>/g, "")
-      .replace(/<\/w:t>/g, "")
-      .replace(/<w:p[^>]*>/g, "\n")
-      .replace(/<[^>]+>/g, "")
-      .replace(/\n{3,}/g, "\n\n")
-      .trim();
-    return text;
-  }
-
-  if (name.endsWith(".pdf")) {
+  // ---- PDF → page images ----
+  if (lower.endsWith(".pdf")) {
+    onProgress?.("正在渲染 PDF 页面...");
     const pdfjsLib = await import("pdfjs-dist");
     pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
+
     const arrayBuffer = await blob.arrayBuffer();
     const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-    const pages: string[] = [];
+
+    const pageUrls: string[] = [];
+    const textParts: string[] = [];
+
     for (let i = 1; i <= pdf.numPages; i++) {
+      onProgress?.(`正在渲染第 ${i}/${pdf.numPages} 页...`);
       const page = await pdf.getPage(i);
-      const content = await page.getTextContent();
-      pages.push(content.items.map((item: any) => item.str).join(""));
+
+      // Render page as image (scale 2x for clarity)
+      const viewport = page.getViewport({ scale: 2 });
+      const canvas = document.createElement("canvas");
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      const ctx = canvas.getContext("2d")!;
+      await page.render({ canvasContext: ctx, viewport }).promise;
+      pageUrls.push(canvas.toDataURL("image/png"));
+
+      // Extract text for AI
+      const textContent = await page.getTextContent();
+      textParts.push(textContent.items.map((item: any) => item.str).join(""));
     }
-    return pages.join("\n\n");
+
+    const plainText = textParts.join("\n\n");
+    return {
+      content: { type: "images", pages: pageUrls, plainText },
+      plainText,
+    };
   }
 
-  return "不支持的文件格式";
+  // ---- TXT fallback ----
+  if (lower.endsWith(".txt")) {
+    const text = await blob.text();
+    return {
+      content: { type: "html", html: `<pre style="white-space:pre-wrap;font-family:inherit;">${escapeHtml(text)}</pre>`, plainText: text },
+      plainText: text,
+    };
+  }
+
+  return {
+    content: { type: "html", html: "<p>不支持的文件格式</p>", plainText: "" },
+    plainText: "",
+  };
+}
+
+function escapeHtml(s: string) {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 interface BidAnalysisItem {
@@ -67,7 +123,8 @@ export default function BiddingAssistantPlus() {
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [documentText, setDocumentText] = useState("");
+  const [docContent, setDocContent] = useState<DocContent>({ type: "empty" });
+  const [plainText, setPlainText] = useState("");
   const [fileName, setFileName] = useState("");
   const [loading, setLoading] = useState(false);
   const [commitmentLoading, setCommitmentLoading] = useState(false);
@@ -102,6 +159,22 @@ export default function BiddingAssistantPlus() {
     }
   }, [user, toast]);
 
+  // Common parsing logic
+  const loadBlob = useCallback(async (blob: Blob, name: string, displayName: string) => {
+    setDocContent({ type: "loading", progress: "正在解析文件..." });
+    setFileName(displayName);
+    try {
+      const result = await parseDocumentBlob(blob, name, (msg) => {
+        setDocContent({ type: "loading", progress: msg });
+      });
+      setDocContent(result.content);
+      setPlainText(result.plainText);
+    } catch (err: any) {
+      setDocContent({ type: "empty" });
+      throw err;
+    }
+  }, []);
+
   // Load a specific bid file from storage
   const handleLoadBidFile = useCallback(async (item: BidAnalysisItem) => {
     if (!item.file_path) {
@@ -116,13 +189,10 @@ export default function BiddingAssistantPlus() {
         .download(item.file_path);
       if (error) throw error;
 
-      // Determine file extension from storage path
       const ext = item.file_path.split(".").pop()?.toLowerCase() || "";
       const displayName = item.project_name || item.file_path.split("/").pop() || "document";
 
-      const text = await extractTextFromBlob(data, `file.${ext}`);
-      setDocumentText(text);
-      setFileName(displayName);
+      await loadBlob(data, `file.${ext}`, displayName);
       setLoadDialogOpen(false);
       toast({ title: "招标文件已加载", description: displayName });
     } catch (err: any) {
@@ -130,7 +200,7 @@ export default function BiddingAssistantPlus() {
     } finally {
       setLoadingFileId(null);
     }
-  }, [toast]);
+  }, [toast, loadBlob]);
 
   // Local file upload
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -139,9 +209,7 @@ export default function BiddingAssistantPlus() {
 
     setLoading(true);
     try {
-      const text = await extractTextFromBlob(file, file.name);
-      setDocumentText(text);
-      setFileName(file.name);
+      await loadBlob(file, file.name, file.name);
       toast({ title: "文件已加载", description: file.name });
     } catch (err: any) {
       toast({ title: "文件解析失败", description: err.message, variant: "destructive" });
@@ -174,7 +242,7 @@ export default function BiddingAssistantPlus() {
   }, [outline]);
 
   const handleGenerateCommitment = async () => {
-    if (!documentText) {
+    if (!plainText) {
       toast({ title: "请先上传招标文件", variant: "destructive" });
       return;
     }
@@ -193,7 +261,7 @@ export default function BiddingAssistantPlus() {
         body: JSON.stringify({
           command: "__GENERATE_COMMITMENT__",
           currentTree: outline.tree,
-          documentText: documentText.slice(0, 10000),
+          documentText: plainText.slice(0, 10000),
         }),
       });
 
@@ -216,6 +284,8 @@ export default function BiddingAssistantPlus() {
       setCommitmentLoading(false);
     }
   };
+
+  const hasDocument = docContent.type !== "empty" && docContent.type !== "loading";
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col gap-3">
@@ -258,7 +328,7 @@ export default function BiddingAssistantPlus() {
             variant="outline"
             size="sm"
             onClick={handleGenerateCommitment}
-            disabled={commitmentLoading || !documentText}
+            disabled={commitmentLoading || !hasDocument}
           >
             {commitmentLoading ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Wand2 className="w-4 h-4 mr-1" />}
             生成承诺大纲
@@ -274,8 +344,8 @@ export default function BiddingAssistantPlus() {
             <AICommandInput
               tree={outline.tree}
               onApplyChanges={outline.replaceTree}
-              documentText={documentText}
-              disabled={!documentText}
+              documentText={plainText}
+              disabled={!hasDocument}
             />
           </div>
           <div className="flex-1 overflow-auto p-2">
@@ -305,7 +375,7 @@ export default function BiddingAssistantPlus() {
               <span className="text-sm text-muted-foreground">
                 {fileName || "招标文件原文"}
               </span>
-              {documentText && (
+              {hasDocument && (
                 <span className="text-xs text-muted-foreground ml-auto">
                   选择文字后点击"+"添加为目录项
                 </span>
@@ -313,7 +383,7 @@ export default function BiddingAssistantPlus() {
             </div>
             <div className="flex-1 min-h-0">
               <DocumentViewer
-                text={documentText}
+                content={docContent}
                 onAddFromSelection={handleAddFromSelection}
               />
             </div>
