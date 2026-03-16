@@ -355,6 +355,17 @@ export default function MaterialList({ folderId, onMaterialChange }: MaterialLis
           {folderId === null ? "全部材料" : "当前目录"} · {materials.length} 个文件
         </div>
         <div className="flex gap-2">
+          {selectedIds.size > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={openMoveDialog}
+              className="gap-1"
+            >
+              <FolderInput className="w-3.5 h-3.5" />
+              移动到 ({selectedIds.size})
+            </Button>
+          )}
           {selectedIds.size > 0 && isAdmin && (
             <Button
               variant="destructive"
