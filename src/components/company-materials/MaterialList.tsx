@@ -345,7 +345,7 @@ export default function MaterialList({ folderId, onMaterialChange }: MaterialLis
                         <div className="min-w-0">
                           <p className="text-sm font-medium truncate">{mat.file_name}</p>
                           {mat.content_description && (
-                            <p className="text-xs text-muted-foreground truncate max-w-[200px]">{mat.content_description}</p>
+                            <p className="text-xs text-muted-foreground truncate">{mat.content_description}</p>
                           )}
                         </div>
                       </div>
