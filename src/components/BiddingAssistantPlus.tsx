@@ -54,39 +54,27 @@ async function parseDocumentBlob(
     };
   }
 
-  // ---- PDF → page images ----
+  // ---- PDF → pass raw data for canvas + text layer rendering ----
   if (lower.endsWith(".pdf")) {
-    onProgress?.("正在渲染 PDF 页面...");
+    onProgress?.("正在加载 PDF...");
     const pdfjsLib = await import("pdfjs-dist");
     pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
 
     const arrayBuffer = await blob.arrayBuffer();
     const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
 
-    const pageUrls: string[] = [];
+    // Extract text for AI operations
     const textParts: string[] = [];
-
     for (let i = 1; i <= pdf.numPages; i++) {
-      onProgress?.(`正在渲染第 ${i}/${pdf.numPages} 页...`);
+      onProgress?.(`正在提取文本 ${i}/${pdf.numPages}...`);
       const page = await pdf.getPage(i);
-
-      // Render page as image (scale 2x for clarity)
-      const viewport = page.getViewport({ scale: 2 });
-      const canvas = document.createElement("canvas");
-      canvas.width = viewport.width;
-      canvas.height = viewport.height;
-      const ctx = canvas.getContext("2d")!;
-      await page.render({ canvasContext: ctx, viewport }).promise;
-      pageUrls.push(canvas.toDataURL("image/png"));
-
-      // Extract text for AI
       const textContent = await page.getTextContent();
       textParts.push(textContent.items.map((item: any) => item.str).join(""));
     }
 
     const plainText = textParts.join("\n\n");
     return {
-      content: { type: "images", pages: pageUrls, plainText },
+      content: { type: "pdf" as const, data: arrayBuffer, plainText },
       plainText,
     };
   }
