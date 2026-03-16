@@ -143,7 +143,7 @@ export default function BiddingAssistantPlus() {
   const { user } = useAuth();
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [autoParseLoading, setAutoParseLoading] = useState(false);
+  const frameworkInputRef = useRef<HTMLInputElement>(null);
 
   const [docContent, setDocContent] = useState<DocContent>({ type: "empty" });
   const [plainText, setPlainText] = useState("");
