@@ -12,6 +12,7 @@ export type DocContent =
 interface DocumentViewerProps {
   content: DocContent;
   onAddFromSelection: (selectedText: string) => void;
+  highlightText?: string | null;
 }
 
 /** Renders a single PDF page: canvas + transparent text layer for selection */
@@ -100,12 +101,85 @@ function PdfPage({ pdf, pageNum }: { pdf: any; pageNum: number }) {
   );
 }
 
-export default function DocumentViewer({ content, onAddFromSelection }: DocumentViewerProps) {
+export default function DocumentViewer({ content, onAddFromSelection, highlightText }: DocumentViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [floatingBtn, setFloatingBtn] = useState<{ x: number; y: number; text: string } | null>(null);
   const [pdfDoc, setPdfDoc] = useState<any>(null);
   const [pdfPageCount, setPdfPageCount] = useState(0);
   const [pdfLoading, setPdfLoading] = useState(false);
+
+  // Highlight and scroll to matching text when highlightText changes
+  useEffect(() => {
+    if (!highlightText || !containerRef.current) return;
+
+    // Clear previous highlights
+    containerRef.current.querySelectorAll(".outline-highlight").forEach((el) => {
+      const parent = el.parentNode;
+      if (parent) {
+        parent.replaceChild(document.createTextNode(el.textContent || ""), el);
+        parent.normalize();
+      }
+    });
+
+    const searchText = highlightText.trim();
+    if (!searchText) return;
+
+    // Small delay to ensure DOM is ready
+    const timer = setTimeout(() => {
+      if (!containerRef.current) return;
+
+      // Walk all text nodes and find matches
+      const walker = document.createTreeWalker(
+        containerRef.current,
+        NodeFilter.SHOW_TEXT,
+        null
+      );
+
+      let firstMatch: HTMLElement | null = null;
+      const nodesToProcess: { node: Text; index: number }[] = [];
+
+      let textNode: Text | null;
+      while ((textNode = walker.nextNode() as Text | null)) {
+        if (!textNode) break;
+        const text = textNode.textContent || "";
+        const idx = text.indexOf(searchText);
+        if (idx !== -1) {
+          nodesToProcess.push({ node: textNode, index: idx });
+        }
+      }
+
+      // Process matches (in reverse to maintain DOM positions)
+      for (let i = nodesToProcess.length - 1; i >= 0; i--) {
+        const { node, index } = nodesToProcess[i];
+        const range = document.createRange();
+        range.setStart(node, index);
+        range.setEnd(node, index + searchText.length);
+
+        const mark = document.createElement("mark");
+        mark.className = "outline-highlight";
+        mark.style.backgroundColor = "hsl(var(--accent) / 0.35)";
+        mark.style.borderRadius = "2px";
+        mark.style.padding = "1px 0";
+        mark.style.transition = "background-color 0.3s";
+
+        range.surroundContents(mark);
+
+        if (!firstMatch) firstMatch = mark;
+      }
+
+      // Scroll to first match
+      if (firstMatch) {
+        firstMatch.scrollIntoView({ behavior: "smooth", block: "center" });
+        // Flash effect
+        firstMatch.style.backgroundColor = "hsl(var(--accent) / 0.6)";
+        setTimeout(() => {
+          if (firstMatch) firstMatch.style.backgroundColor = "hsl(var(--accent) / 0.35)";
+        }, 1000);
+      }
+    }, 100);
+
+    return () => clearTimeout(timer);
+  }, [highlightText]);
 
   useEffect(() => {
     if (content.type !== "pdf") {
