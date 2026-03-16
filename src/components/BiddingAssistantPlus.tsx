@@ -145,7 +145,8 @@ export default function BiddingAssistantPlus() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const frameworkInputRef = useRef<HTMLInputElement>(null);
 
-  const [docContent, setDocContent] = useState<DocContent>({ type: "empty" });
+  const [autoParseLoading, setAutoParseLoading] = useState(false);
+  const [frameworkLoading, setFrameworkLoading] = useState(false);
   const [plainText, setPlainText] = useState("");
   const [fileName, setFileName] = useState("");
   const [loading, setLoading] = useState(false);
