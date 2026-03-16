@@ -352,6 +352,12 @@ export default function BiddingAssistantPlus() {
 
   const hasDocument = docContent.type !== "empty" && docContent.type !== "loading";
 
+  // Compute highlight text from selected node
+  const selectedNode = outline.selectedId
+    ? outline.flatItems.find((f) => f.id === outline.selectedId)
+    : null;
+  const highlightText = selectedNode?.source_text || selectedNode?.title || null;
+
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col gap-3">
       {/* Header */}
