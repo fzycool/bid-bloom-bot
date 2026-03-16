@@ -148,7 +148,7 @@ export default function OutlineTree({
 
   return (
     <div className="space-y-0.5">
-      <div className="flex justify-end gap-1.5 mb-2 flex-wrap">
+      <div className="flex justify-end gap-1.5 mb-2">
         {/* 自动解析 button group */}
         <div className="flex items-center">
           <Button
