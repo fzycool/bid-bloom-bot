@@ -1,21 +1,25 @@
 import React, { useState, useRef, useCallback, useEffect } from "react";
-import { Plus } from "lucide-react";
+import { Plus, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+
+export type DocContent =
+  | { type: "empty" }
+  | { type: "loading"; progress?: string }
+  | { type: "html"; html: string; plainText: string }
+  | { type: "images"; pages: string[]; plainText: string };
 
 interface DocumentViewerProps {
-  text: string;
+  content: DocContent;
   onAddFromSelection: (selectedText: string) => void;
 }
 
-export default function DocumentViewer({ text, onAddFromSelection }: DocumentViewerProps) {
+export default function DocumentViewer({ content, onAddFromSelection }: DocumentViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [floatingBtn, setFloatingBtn] = useState<{ x: number; y: number; text: string } | null>(null);
 
   const handleMouseUp = useCallback(() => {
     const selection = window.getSelection();
     if (!selection || selection.isCollapsed || !selection.toString().trim()) {
-      // Delay hiding to allow button click
       setTimeout(() => setFloatingBtn(null), 200);
       return;
     }
@@ -28,8 +32,8 @@ export default function DocumentViewer({ text, onAddFromSelection }: DocumentVie
     const containerRect = containerRef.current.getBoundingClientRect();
 
     setFloatingBtn({
-      x: rect.right - containerRect.left,
-      y: rect.top - containerRect.top - 36,
+      x: Math.min(rect.right - containerRect.left, containerRect.width - 130),
+      y: rect.top - containerRect.top - 36 + containerRef.current.scrollTop,
       text: selectedText,
     });
   }, []);
@@ -42,8 +46,22 @@ export default function DocumentViewer({ text, onAddFromSelection }: DocumentVie
     }
   }, [floatingBtn, onAddFromSelection]);
 
-  // Split text into paragraphs for better readability
-  const paragraphs = text.split(/\n{2,}/).filter(Boolean);
+  if (content.type === "empty") {
+    return (
+      <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
+        <p>请上传招标文件以开始</p>
+      </div>
+    );
+  }
+
+  if (content.type === "loading") {
+    return (
+      <div className="flex flex-col items-center justify-center h-full text-muted-foreground text-sm gap-3">
+        <Loader2 className="w-6 h-6 animate-spin" />
+        <p>{content.progress || "正在解析文件..."}</p>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -51,14 +69,24 @@ export default function DocumentViewer({ text, onAddFromSelection }: DocumentVie
       className="relative h-full overflow-auto"
       onMouseUp={handleMouseUp}
     >
-      {!text ? (
-        <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
-          <p>请上传招标文件以开始</p>
-        </div>
-      ) : (
-        <div className="p-4 space-y-3 text-sm leading-relaxed text-foreground/90 select-text">
-          {paragraphs.map((p, i) => (
-            <p key={i} className="whitespace-pre-wrap">{p}</p>
+      {content.type === "html" && (
+        <div
+          className="p-6 select-text doc-html-content"
+          dangerouslySetInnerHTML={{ __html: content.html }}
+        />
+      )}
+
+      {content.type === "images" && (
+        <div className="p-4 space-y-2 select-text">
+          {content.pages.map((src, i) => (
+            <div key={i} className="border border-border rounded-sm overflow-hidden shadow-sm">
+              <img
+                src={src}
+                alt={`第 ${i + 1} 页`}
+                className="w-full h-auto"
+                draggable={false}
+              />
+            </div>
           ))}
         </div>
       )}
@@ -72,7 +100,7 @@ export default function DocumentViewer({ text, onAddFromSelection }: DocumentVie
           <Button
             size="sm"
             className="h-7 px-2.5 shadow-lg gap-1 text-xs bg-accent text-accent-foreground hover:bg-accent/90"
-            onMouseDown={(e) => e.preventDefault()} // prevent losing selection
+            onMouseDown={(e) => e.preventDefault()}
             onClick={handleAdd}
           >
             <Plus className="w-3.5 h-3.5" />
