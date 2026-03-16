@@ -192,7 +192,7 @@ export default function OutlineTree({
                 </div>
                 <Textarea
                   value={customPrompt}
-                  onChange={(e) => setCustomPrompt(e.target.value)}
+                  onChange={(e) => savePrompt(e.target.value)}
                   rows={6}
                   className="text-sm"
                   placeholder="请输入解析提示词..."
