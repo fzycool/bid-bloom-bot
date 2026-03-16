@@ -1,8 +1,11 @@
 import React, { useState, useCallback, useRef } from "react";
-import { Upload, FileText, Plus, Wand2, Loader2, ScrollText } from "lucide-react";
+import { Upload, FileText, Plus, Wand2, Loader2, ScrollText, FolderOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
@@ -13,19 +16,17 @@ import AddNodeDialog from "@/components/bidding-plus/AddNodeDialog";
 import { useOutlineTree } from "@/components/bidding-plus/useOutlineTree";
 import type { InsertPosition } from "@/components/bidding-plus/types";
 
-// PDF text extraction (reuse existing)
-async function extractTextFromFile(file: File): Promise<string> {
-  if (file.type === "text/plain") {
-    return await file.text();
+// Text extraction from blob
+async function extractTextFromBlob(blob: Blob, name: string): Promise<string> {
+  if (name.endsWith(".txt")) {
+    return await blob.text();
   }
 
-  // For DOCX: use JSZip to extract text from document.xml
-  if (file.name.endsWith(".docx") || file.type.includes("wordprocessingml")) {
+  if (name.endsWith(".docx")) {
     const JSZip = (await import("jszip")).default;
-    const zip = await JSZip.loadAsync(file);
+    const zip = await JSZip.loadAsync(blob);
     const docXml = await zip.file("word/document.xml")?.async("string");
     if (!docXml) return "无法解析 DOCX 文件内容";
-    // Simple XML text extraction
     const text = docXml
       .replace(/<w:t[^>]*>/g, "")
       .replace(/<\/w:t>/g, "")
@@ -36,11 +37,10 @@ async function extractTextFromFile(file: File): Promise<string> {
     return text;
   }
 
-  // For PDF
-  if (file.type === "application/pdf" || file.name.endsWith(".pdf")) {
+  if (name.endsWith(".pdf")) {
     const pdfjsLib = await import("pdfjs-dist");
     pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
-    const arrayBuffer = await file.arrayBuffer();
+    const arrayBuffer = await blob.arrayBuffer();
     const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
     const pages: string[] = [];
     for (let i = 1; i <= pdf.numPages; i++) {
@@ -51,7 +51,15 @@ async function extractTextFromFile(file: File): Promise<string> {
     return pages.join("\n\n");
   }
 
-  return "不支持的文件格式，请上传 PDF、DOCX 或 TXT 文件";
+  return "不支持的文件格式";
+}
+
+interface BidAnalysisItem {
+  id: string;
+  project_name: string | null;
+  file_path: string | null;
+  created_at: string;
+  ai_status: string;
 }
 
 export default function BiddingAssistantPlus() {
@@ -64,20 +72,74 @@ export default function BiddingAssistantPlus() {
   const [loading, setLoading] = useState(false);
   const [commitmentLoading, setCommitmentLoading] = useState(false);
 
-  // Dialog state for adding nodes from text selection
+  // Load from bid analyses
+  const [loadDialogOpen, setLoadDialogOpen] = useState(false);
+  const [bidAnalyses, setBidAnalyses] = useState<BidAnalysisItem[]>([]);
+  const [loadingList, setLoadingList] = useState(false);
+  const [loadingFileId, setLoadingFileId] = useState<string | null>(null);
+
   const [addDialog, setAddDialog] = useState<{ open: boolean; defaultTitle: string }>({
     open: false, defaultTitle: "",
   });
 
   const outline = useOutlineTree();
 
+  // Fetch bid analyses list
+  const fetchBidAnalyses = useCallback(async () => {
+    if (!user) return;
+    setLoadingList(true);
+    try {
+      const { data, error } = await supabase
+        .from("bid_analyses")
+        .select("id, project_name, file_path, created_at, ai_status")
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      setBidAnalyses(data || []);
+    } catch (err: any) {
+      toast({ title: "获取招标文件列表失败", description: err.message, variant: "destructive" });
+    } finally {
+      setLoadingList(false);
+    }
+  }, [user, toast]);
+
+  // Load a specific bid file from storage
+  const handleLoadBidFile = useCallback(async (item: BidAnalysisItem) => {
+    if (!item.file_path) {
+      toast({ title: "该分析记录没有关联文件", variant: "destructive" });
+      return;
+    }
+
+    setLoadingFileId(item.id);
+    try {
+      const { data, error } = await supabase.storage
+        .from("knowledge-base")
+        .download(item.file_path);
+      if (error) throw error;
+
+      // Determine file extension from storage path
+      const ext = item.file_path.split(".").pop()?.toLowerCase() || "";
+      const displayName = item.project_name || item.file_path.split("/").pop() || "document";
+
+      const text = await extractTextFromBlob(data, `file.${ext}`);
+      setDocumentText(text);
+      setFileName(displayName);
+      setLoadDialogOpen(false);
+      toast({ title: "招标文件已加载", description: displayName });
+    } catch (err: any) {
+      toast({ title: "加载文件失败", description: err.message, variant: "destructive" });
+    } finally {
+      setLoadingFileId(null);
+    }
+  }, [toast]);
+
+  // Local file upload
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     setLoading(true);
     try {
-      const text = await extractTextFromFile(file);
+      const text = await extractTextFromBlob(file, file.name);
       setDocumentText(text);
       setFileName(file.name);
       toast({ title: "文件已加载", description: file.name });
@@ -90,7 +152,6 @@ export default function BiddingAssistantPlus() {
   };
 
   const handleAddFromSelection = useCallback((selectedText: string) => {
-    // Truncate long selections to a reasonable title
     const title = selectedText.length > 60 ? selectedText.slice(0, 57) + "..." : selectedText;
     setAddDialog({ open: true, defaultTitle: title });
   }, []);
@@ -112,7 +173,6 @@ export default function BiddingAssistantPlus() {
     outline.addNode("新节点", "sibling");
   }, [outline]);
 
-  // Generate commitment outline
   const handleGenerateCommitment = async () => {
     if (!documentText) {
       toast({ title: "请先上传招标文件", variant: "destructive" });
@@ -140,15 +200,12 @@ export default function BiddingAssistantPlus() {
       if (!response.ok) throw new Error("生成失败");
       const data = await response.json();
       if (data.commitmentNodes) {
-        // Insert commitment nodes at selected position or root
         for (const node of data.commitmentNodes) {
           outline.addNode(node.title, "child");
-          // Add sub-nodes
           if (node.children) {
             for (const child of node.children) {
               outline.addNode(child.title, "child");
             }
-            // Go back up to parent level (select the commitment root to add next sibling)
           }
         }
         toast({ title: "承诺大纲已生成" });
@@ -180,11 +237,22 @@ export default function BiddingAssistantPlus() {
           <Button
             variant="outline"
             size="sm"
+            onClick={() => {
+              fetchBidAnalyses();
+              setLoadDialogOpen(true);
+            }}
+          >
+            <FolderOpen className="w-4 h-4 mr-1" />
+            载入招标文件
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
             onClick={() => fileInputRef.current?.click()}
             disabled={loading}
           >
             {loading ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Upload className="w-4 h-4 mr-1" />}
-            {fileName || "上传招标文件"}
+            本地上传
           </Button>
           <Button
             variant="outline"
@@ -261,6 +329,55 @@ export default function BiddingAssistantPlus() {
         defaultTitle={addDialog.defaultTitle}
         hasSelected={!!outline.selectedId}
       />
+
+      {/* Load Bid File Dialog */}
+      <Dialog open={loadDialogOpen} onOpenChange={setLoadDialogOpen}>
+        <DialogContent className="sm:max-w-lg max-h-[70vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>载入招标文件</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">从「招标解析」中选择已上传的招标文件</p>
+          <div className="flex-1 overflow-auto min-h-0 space-y-1 mt-2">
+            {loadingList ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+              </div>
+            ) : bidAnalyses.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground text-sm">
+                暂无招标解析记录，请先在「招标解析」模块上传文件
+              </div>
+            ) : (
+              bidAnalyses.map((item) => (
+                <button
+                  key={item.id}
+                  onClick={() => handleLoadBidFile(item)}
+                  disabled={!item.file_path || loadingFileId === item.id}
+                  className={cn(
+                    "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-colors",
+                    "hover:bg-muted/50 disabled:opacity-50 disabled:cursor-not-allowed",
+                    loadingFileId === item.id && "bg-accent/10"
+                  )}
+                >
+                  {loadingFileId === item.id ? (
+                    <Loader2 className="w-4 h-4 animate-spin text-accent shrink-0" />
+                  ) : (
+                    <FileText className="w-4 h-4 text-muted-foreground shrink-0" />
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium truncate">
+                      {item.project_name || "未命名项目"}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {new Date(item.created_at).toLocaleDateString("zh-CN")}
+                      {!item.file_path && " · 无文件"}
+                    </p>
+                  </div>
+                </button>
+              ))
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
