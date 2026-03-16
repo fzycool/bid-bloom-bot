@@ -304,10 +304,7 @@ export default function MaterialList({ folderId, onMaterialChange }: MaterialLis
                   </TableHead>
                 )}
                 <TableHead>文件名</TableHead>
-                <TableHead className="w-24">状态</TableHead>
                 <TableHead className="hidden md:table-cell">类型</TableHead>
-                <TableHead className="hidden lg:table-cell">颁发单位</TableHead>
-                <TableHead className="hidden lg:table-cell">证书编号</TableHead>
                 <TableHead className="hidden md:table-cell w-28">有效期</TableHead>
                 <TableHead className="w-20">大小</TableHead>
                 <TableHead className="w-16">操作</TableHead>
@@ -353,20 +350,8 @@ export default function MaterialList({ folderId, onMaterialChange }: MaterialLis
                         </div>
                       </div>
                     </TableCell>
-                    <TableCell>
-                      <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs font-medium ${status.color}`}>
-                        <StatusIcon className={`w-3 h-3 ${mat.ai_status === "processing" ? "animate-spin" : ""}`} />
-                        {status.label}
-                      </span>
-                    </TableCell>
                     <TableCell className="hidden md:table-cell">
                       {mat.material_type && <Badge variant="secondary" className="text-xs">{mat.material_type}</Badge>}
-                    </TableCell>
-                    <TableCell className="hidden lg:table-cell text-sm text-muted-foreground">
-                      {mat.issuing_authority || "-"}
-                    </TableCell>
-                    <TableCell className="hidden lg:table-cell text-sm text-muted-foreground">
-                      {mat.certificate_number || "-"}
                     </TableCell>
                     <TableCell className="hidden md:table-cell">
                       {expiry ? (
