@@ -127,10 +127,10 @@ interface BidAnalysisItem {
   ai_status: string;
   document_structure?: any;
 }
-
 let _fwId = 1;
 const genId = () => `fw_${Date.now()}_${_fwId++}`;
 
+function countNodes(tree: any[]): number {
   let count = 0;
   for (const node of tree) {
     count += 1;
