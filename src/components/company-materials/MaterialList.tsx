@@ -432,14 +432,12 @@ export default function MaterialList({ folderId, onMaterialChange }: MaterialLis
 
                 return (
                   <TableRow key={mat.id} className={isSelected ? "bg-accent/30" : ""}>
-                    {isAdmin && (
-                      <TableCell>
-                        <Checkbox
-                          checked={isSelected}
-                          onCheckedChange={() => toggleSelect(mat.id)}
-                        />
-                      </TableCell>
-                    )}
+                    <TableCell>
+                      <Checkbox
+                        checked={isSelected}
+                        onCheckedChange={() => toggleSelect(mat.id)}
+                      />
+                    </TableCell>
                     <TableCell className="max-w-0">
                       <div className="flex items-center gap-2 min-w-0">
                         {isImageFile(mat) ? (
