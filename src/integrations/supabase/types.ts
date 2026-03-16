@@ -295,6 +295,98 @@ export type Database = {
           },
         ]
       }
+      bidding_plus_sheets: {
+        Row: {
+          content: string | null
+          created_at: string
+          id: string
+          sort_order: number
+          source_material_id: string | null
+          task_id: string
+          title: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          content?: string | null
+          created_at?: string
+          id?: string
+          sort_order?: number
+          source_material_id?: string | null
+          task_id: string
+          title?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          content?: string | null
+          created_at?: string
+          id?: string
+          sort_order?: number
+          source_material_id?: string | null
+          task_id?: string
+          title?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bidding_plus_sheets_source_material_id_fkey"
+            columns: ["source_material_id"]
+            isOneToOne: false
+            referencedRelation: "company_materials"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bidding_plus_sheets_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "bidding_plus_tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      bidding_plus_tasks: {
+        Row: {
+          bid_analysis_id: string | null
+          created_at: string
+          current_step: number
+          id: string
+          outline_data: Json | null
+          task_name: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          bid_analysis_id?: string | null
+          created_at?: string
+          current_step?: number
+          id?: string
+          outline_data?: Json | null
+          task_name?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          bid_analysis_id?: string | null
+          created_at?: string
+          current_step?: number
+          id?: string
+          outline_data?: Json | null
+          task_name?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bidding_plus_tasks_bid_analysis_id_fkey"
+            columns: ["bid_analysis_id"]
+            isOneToOne: false
+            referencedRelation: "bid_analyses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       company_materials: {
         Row: {
           ai_extracted_info: Json | null
