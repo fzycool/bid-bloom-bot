@@ -409,14 +409,12 @@ export default function MaterialList({ folderId, onMaterialChange }: MaterialLis
           <Table className="table-fixed">
             <TableHeader>
               <TableRow>
-                {isAdmin && (
-                  <TableHead className="w-10">
-                    <Checkbox
-                      checked={selectedIds.size === materials.length && materials.length > 0}
-                      onCheckedChange={toggleSelectAll}
-                    />
-                  </TableHead>
-                )}
+                <TableHead className="w-10">
+                  <Checkbox
+                    checked={selectedIds.size === materials.length && materials.length > 0}
+                    onCheckedChange={toggleSelectAll}
+                  />
+                </TableHead>
                 <TableHead className="w-[62%]">文件名</TableHead>
                 <TableHead className="hidden md:table-cell w-[88px] whitespace-nowrap">类型</TableHead>
                 <TableHead className="hidden md:table-cell w-[112px] whitespace-nowrap">有效期</TableHead>
