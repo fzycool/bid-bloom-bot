@@ -40,7 +40,13 @@ serve(async (req) => {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 15000);
 
-    const resp = await fetch(`${actualUrl}/chat/completions`, {
+    // Normalize URL: avoid double /chat/completions
+    let endpoint = actualUrl.replace(/\/+$/, "");
+    if (!endpoint.endsWith("/chat/completions")) {
+      endpoint += "/chat/completions";
+    }
+
+    const resp = await fetch(endpoint, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
