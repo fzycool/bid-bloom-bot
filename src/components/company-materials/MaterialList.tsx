@@ -350,20 +350,8 @@ export default function MaterialList({ folderId, onMaterialChange }: MaterialLis
                         </div>
                       </div>
                     </TableCell>
-                    <TableCell>
-                      <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs font-medium ${status.color}`}>
-                        <StatusIcon className={`w-3 h-3 ${mat.ai_status === "processing" ? "animate-spin" : ""}`} />
-                        {status.label}
-                      </span>
-                    </TableCell>
                     <TableCell className="hidden md:table-cell">
                       {mat.material_type && <Badge variant="secondary" className="text-xs">{mat.material_type}</Badge>}
-                    </TableCell>
-                    <TableCell className="hidden lg:table-cell text-sm text-muted-foreground">
-                      {mat.issuing_authority || "-"}
-                    </TableCell>
-                    <TableCell className="hidden lg:table-cell text-sm text-muted-foreground">
-                      {mat.certificate_number || "-"}
                     </TableCell>
                     <TableCell className="hidden md:table-cell">
                       {expiry ? (
