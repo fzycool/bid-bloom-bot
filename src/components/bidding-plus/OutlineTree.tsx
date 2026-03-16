@@ -148,10 +148,16 @@ export default function OutlineTree({
       return localStorage.getItem("bidding_plus_custom_prompt") || DEFAULT_PROMPT;
     } catch { return DEFAULT_PROMPT; }
   });
+  const [promptSaved, setPromptSaved] = useState(false);
 
   const savePrompt = (val: string) => {
     setCustomPrompt(val);
-    try { localStorage.setItem("bidding_plus_custom_prompt", val); } catch {}
+  };
+
+  const persistPrompt = () => {
+    try { localStorage.setItem("bidding_plus_custom_prompt", customPrompt); } catch {}
+    setPromptSaved(true);
+    setTimeout(() => setPromptSaved(false), 2000);
   };
 
   return (
@@ -201,13 +207,20 @@ export default function OutlineTree({
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => savePrompt(DEFAULT_PROMPT)}
+                    onClick={() => { savePrompt(DEFAULT_PROMPT); setPromptSaved(false); }}
                   >
                     重置默认
                   </Button>
                   <Button
                     size="sm"
-                    onClick={() => onAutoParse(customPrompt)}
+                    variant="outline"
+                    onClick={persistPrompt}
+                  >
+                    {promptSaved ? <><Check className="w-3.5 h-3.5 mr-1" />已保存</> : "保存提示词"}
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={() => { persistPrompt(); onAutoParse(customPrompt); }}
                     disabled={autoParseLoading || !hasDocument}
                   >
                     开始解析
