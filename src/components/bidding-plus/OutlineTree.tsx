@@ -44,7 +44,8 @@ interface OutlineTreeProps {
 export default function OutlineTree({
   flatItems, selectedId, expandedIds, onSelect, onToggle,
   onRename, onDelete, onMove, onAddChild, onAddSibling,
-  onPromote, onDemote, onAutoNumber,
+  onPromote, onDemote, onAutoNumber, onAutoParse, onImportOutline,
+  autoParseLoading, hasDocument,
 }: OutlineTreeProps) {
   const [dragId, setDragId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
