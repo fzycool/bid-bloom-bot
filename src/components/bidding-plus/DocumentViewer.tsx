@@ -12,6 +12,7 @@ export type DocContent =
 interface DocumentViewerProps {
   content: DocContent;
   onAddFromSelection: (selectedText: string) => void;
+  highlightText?: string | null;
 }
 
 /** Renders a single PDF page: canvas + transparent text layer for selection */
