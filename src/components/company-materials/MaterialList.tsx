@@ -342,11 +342,8 @@ export default function MaterialList({ folderId, onMaterialChange }: MaterialLis
                         ) : (
                           <FileText className="w-4 h-4 shrink-0 text-muted-foreground" />
                         )}
-                        <div className="min-w-0 flex-1">
-                          <p className="text-sm font-medium truncate">{mat.file_name}</p>
-                          {mat.content_description && (
-                            <p className="text-xs text-muted-foreground truncate">{mat.content_description}</p>
-                          )}
+                        <div className="min-w-0 flex-1" title={mat.file_name}>
+                          <p className="text-sm font-medium line-clamp-2 break-all">{mat.file_name}</p>
                         </div>
                       </div>
                     </TableCell>
