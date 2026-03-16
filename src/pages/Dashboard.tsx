@@ -36,6 +36,7 @@ const baseModules = [
   { id: "compare", label: "差异对比", icon: GitCompare },
   { id: "resume", label: "简历工厂", icon: Users },
   { id: "bid", label: "投标助手", icon: ClipboardCheck },
+  { id: "bid-plus", label: "投标助手Plus", icon: ClipboardCheck },
   { id: "audit", label: "全息审查", icon: CheckCircle },
   { id: "techcheck", label: "技术标质检", icon: ClipboardCheck },
   
