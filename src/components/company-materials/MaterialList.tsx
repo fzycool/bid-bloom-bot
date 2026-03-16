@@ -18,12 +18,18 @@ import {
   FileText,
   Download,
   Image as ImageIcon,
+  FolderInput,
+  Folder,
+  Building2,
+  ChevronRight,
+  ChevronDown,
 } from "lucide-react";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogFooter,
 } from "@/components/ui/dialog";
 import {
   Table,
@@ -33,6 +39,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { cn } from "@/lib/utils";
 
 interface CompanyMaterial {
   id: string;
