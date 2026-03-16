@@ -28,6 +28,7 @@ import BidComparison from "@/components/BidComparison";
 import CompanyMaterials from "@/components/CompanyMaterials";
 import ResumeTemplates from "@/components/ResumeTemplates";
 import TechnicalBidCheck from "@/components/TechnicalBidCheck";
+import BiddingAssistantPlus from "@/components/BiddingAssistantPlus";
 
 const baseModules = [
   { id: "overview", label: "数据看板", icon: LayoutDashboard },
