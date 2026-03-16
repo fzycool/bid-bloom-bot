@@ -143,8 +143,10 @@ export default function BiddingAssistantPlus() {
   const { user } = useAuth();
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [autoParseLoading, setAutoParseLoading] = useState(false);
+  const frameworkInputRef = useRef<HTMLInputElement>(null);
 
+  const [autoParseLoading, setAutoParseLoading] = useState(false);
+  const [frameworkLoading, setFrameworkLoading] = useState(false);
   const [docContent, setDocContent] = useState<DocContent>({ type: "empty" });
   const [plainText, setPlainText] = useState("");
   const [fileName, setFileName] = useState("");
@@ -153,7 +155,6 @@ export default function BiddingAssistantPlus() {
 
   // Load from bid analyses
   const [loadDialogOpen, setLoadDialogOpen] = useState(false);
-  const [frameworkDialogOpen, setFrameworkDialogOpen] = useState(false);
   const [bidAnalyses, setBidAnalyses] = useState<BidAnalysisItem[]>([]);
   const [loadingList, setLoadingList] = useState(false);
   const [loadingFileId, setLoadingFileId] = useState<string | null>(null);
@@ -225,70 +226,59 @@ export default function BiddingAssistantPlus() {
     }
   }, [toast, loadBlob]);
 
-  // Load document structure as outline framework
-  const handleLoadFramework = useCallback((item: BidAnalysisItem) => {
-    if (!item.document_structure) {
-      toast({ title: "该项目尚无文档结构", variant: "destructive" });
-      return;
-    }
-
-    try {
-      const structure = typeof item.document_structure === "string"
-        ? JSON.parse(item.document_structure)
-        : item.document_structure;
-
-      // Convert document_structure chapters to OutlineNode[]
-      const convertToNodes = (chapters: any[], parentId: string | null = null): any[] => {
-        if (!Array.isArray(chapters)) return [];
-        return chapters.map((ch: any, i: number) => {
-          const id = genId();
-          const title = ch.title || ch.name || ch.chapter_title || `章节 ${i + 1}`;
-          const sectionNumber = ch.section_number || ch.number || null;
-          const children = ch.children || ch.sub_chapters || ch.sections || [];
-          return {
-            id,
-            title: sectionNumber ? `${sectionNumber} ${title}` : title,
-            section_number: sectionNumber,
-            sort_order: i,
-            parent_id: parentId,
-            children: convertToNodes(children, id),
-            source_text: ch.source_text || title,
-          };
-        });
-      };
-
-      // Handle different possible structure formats
-      const chapters = Array.isArray(structure)
-        ? structure
-        : structure.chapters || structure.sections || structure.toc || [];
-
-      const tree = convertToNodes(chapters);
-      if (tree.length === 0) {
-        toast({ title: "文档结构为空", variant: "destructive" });
-        return;
-      }
-
-      outline.replaceTree(tree);
-      setFrameworkDialogOpen(false);
-      toast({ title: "文件框架已载入", description: `共 ${countNodes(tree)} 个节点` });
-    } catch (err: any) {
-      toast({ title: "载入框架失败", description: err.message, variant: "destructive" });
-    }
-  }, [outline, toast]);
-
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Upload local file → parse document → AI extract outline as framework
+  const handleFrameworkUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    setLoading(true);
+    setFrameworkLoading(true);
     try {
-      await loadBlob(file, file.name, file.name);
-      toast({ title: "文件已加载", description: file.name });
+      // Step 1: Parse the file to get plain text
+      const blob = file as Blob;
+      const result = await parseDocumentBlob(blob, file.name);
+      const text = result.plainText;
+      if (!text || text.trim().length < 10) {
+        toast({ title: "文件内容过少，无法提取框架", variant: "destructive" });
+        return;
+      }
+
+      // Also load the document for viewing on the right
+      setDocContent(result.content);
+      setPlainText(text);
+      setFileName(file.name);
+
+      // Step 2: Call AI to extract outline
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const anonKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+
+      const response = await fetch(`${supabaseUrl}/functions/v1/parse-outline`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${anonKey}`,
+        },
+        body: JSON.stringify({
+          documentText: text.slice(0, 30000),
+        }),
+      });
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || "解析失败");
+      }
+
+      const data = await response.json();
+      if (data.tree && Array.isArray(data.tree)) {
+        outline.replaceTree(data.tree);
+        toast({ title: "文件框架已载入", description: `${file.name} · 共 ${countNodes(data.tree)} 个节点` });
+      } else {
+        throw new Error("返回格式异常");
+      }
     } catch (err: any) {
-      toast({ title: "文件解析失败", description: err.message, variant: "destructive" });
+      toast({ title: "载入框架失败", description: err.message, variant: "destructive" });
     } finally {
-      setLoading(false);
-      if (fileInputRef.current) fileInputRef.current.value = "";
+      setFrameworkLoading(false);
+      if (frameworkInputRef.current) frameworkInputRef.current.value = "";
     }
   };
 
@@ -427,7 +417,15 @@ export default function BiddingAssistantPlus() {
             type="file"
             accept=".pdf,.docx,.txt"
             className="hidden"
-            onChange={handleFileUpload}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (!file) return;
+              setLoading(true);
+              loadBlob(file, file.name, file.name)
+                .then(() => toast({ title: "文件已加载", description: file.name }))
+                .catch((err: any) => toast({ title: "文件解析失败", description: err.message, variant: "destructive" }))
+                .finally(() => { setLoading(false); if (fileInputRef.current) fileInputRef.current.value = ""; });
+            }}
           />
           <Button
             variant="outline"
@@ -440,25 +438,21 @@ export default function BiddingAssistantPlus() {
             <FolderOpen className="w-4 h-4 mr-1" />
             载入招标文件
           </Button>
+          <input
+            ref={frameworkInputRef}
+            type="file"
+            accept=".pdf,.docx,.doc,.txt"
+            className="hidden"
+            onChange={handleFrameworkUpload}
+          />
           <Button
             variant="outline"
             size="sm"
-            onClick={() => {
-              fetchBidAnalyses();
-              setFrameworkDialogOpen(true);
-            }}
+            onClick={() => frameworkInputRef.current?.click()}
+            disabled={frameworkLoading}
           >
-            <ListTree className="w-4 h-4 mr-1" />
+            {frameworkLoading ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <ListTree className="w-4 h-4 mr-1" />}
             载入文件框架
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={loading}
-          >
-            {loading ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Upload className="w-4 h-4 mr-1" />}
-            本地上传
           </Button>
           <Button
             variant="outline"
@@ -590,52 +584,6 @@ export default function BiddingAssistantPlus() {
         </DialogContent>
       </Dialog>
 
-      {/* Load Framework Dialog */}
-      <Dialog open={frameworkDialogOpen} onOpenChange={setFrameworkDialogOpen}>
-        <DialogContent className="sm:max-w-lg max-h-[70vh] flex flex-col">
-          <DialogHeader>
-            <DialogTitle>载入投标文件框架</DialogTitle>
-          </DialogHeader>
-          <p className="text-sm text-muted-foreground">从已解析的招标项目中导入文档结构作为大纲框架</p>
-          <div className="flex-1 overflow-auto min-h-0 space-y-1 mt-2">
-            {loadingList ? (
-              <div className="flex items-center justify-center py-8">
-                <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
-              </div>
-            ) : bidAnalyses.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground text-sm">
-                暂无招标解析记录，请先在「招标解析」模块上传并解析文件
-              </div>
-            ) : (
-              bidAnalyses.map((item) => {
-                const hasStructure = !!item.document_structure;
-                return (
-                  <button
-                    key={item.id}
-                    onClick={() => handleLoadFramework(item)}
-                    disabled={!hasStructure}
-                    className={cn(
-                      "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-colors",
-                      "hover:bg-muted/50 disabled:opacity-50 disabled:cursor-not-allowed",
-                    )}
-                  >
-                    <ListTree className="w-4 h-4 text-muted-foreground shrink-0" />
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium truncate">
-                        {item.project_name || "未命名项目"}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {new Date(item.created_at).toLocaleDateString("zh-CN")}
-                        {!hasStructure && " · 无文档结构"}
-                      </p>
-                    </div>
-                  </button>
-                );
-              })
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
