@@ -127,14 +127,20 @@ interface BidAnalysisItem {
   ai_status: string;
 }
 
+function countNodes(tree: any[]): number {
+  let count = 0;
+  for (const node of tree) {
+    count += 1;
+    if (node.children) count += countNodes(node.children);
+  }
+  return count;
+}
+
 export default function BiddingAssistantPlus() {
   const { user } = useAuth();
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  // ... keep existing code
   const [autoParseLoading, setAutoParseLoading] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [docContent, setDocContent] = useState<DocContent>({ type: "empty" });
   const [plainText, setPlainText] = useState("");
