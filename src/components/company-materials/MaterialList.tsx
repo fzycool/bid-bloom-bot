@@ -18,12 +18,18 @@ import {
   FileText,
   Download,
   Image as ImageIcon,
+  FolderInput,
+  Folder,
+  Building2,
+  ChevronRight,
+  ChevronDown,
 } from "lucide-react";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogFooter,
 } from "@/components/ui/dialog";
 import {
   Table,
@@ -33,6 +39,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { cn } from "@/lib/utils";
 
 interface CompanyMaterial {
   id: string;
@@ -71,6 +78,13 @@ const aiStatusConfig: Record<string, { icon: typeof CheckCircle; label: string; 
   failed: { icon: AlertCircle, label: "识别失败", color: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400" },
 };
 
+interface FolderItem {
+  id: string;
+  name: string;
+  parent_id: string | null;
+  sort_order: number;
+}
+
 interface MaterialListProps {
   folderId: string | null; // null = show all
   onMaterialChange?: () => void;
@@ -86,6 +100,11 @@ export default function MaterialList({ folderId, onMaterialChange }: MaterialLis
   const [previewName, setPreviewName] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [deleting, setDeleting] = useState(false);
+  const [moveDialogOpen, setMoveDialogOpen] = useState(false);
+  const [folders, setFolders] = useState<FolderItem[]>([]);
+  const [moveTargetId, setMoveTargetId] = useState<string | null>(null);
+  const [moving, setMoving] = useState(false);
+  const [moveExpanded, setMoveExpanded] = useState<Set<string>>(new Set());
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const fetchMaterials = useCallback(async () => {
@@ -238,10 +257,94 @@ export default function MaterialList({ folderId, onMaterialChange }: MaterialLis
     }
   };
 
+  const fetchFolders = useCallback(async () => {
+    const { data } = await supabase
+      .from("material_folders")
+      .select("id, name, parent_id, sort_order")
+      .order("sort_order");
+    setFolders(data || []);
+  }, []);
+
+  const openMoveDialog = () => {
+    setMoveTargetId(null);
+    setMoveExpanded(new Set());
+    fetchFolders();
+    setMoveDialogOpen(true);
+  };
+
+  const handleBatchMove = async () => {
+    if (!selectedIds.size) return;
+    setMoving(true);
+    try {
+      const { error } = await supabase
+        .from("company_materials")
+        .update({ folder_id: moveTargetId })
+        .in("id", Array.from(selectedIds));
+      if (error) throw error;
+      toast({ title: `已移动 ${selectedIds.size} 个文件` });
+      setSelectedIds(new Set());
+      setMoveDialogOpen(false);
+      fetchMaterials();
+      onMaterialChange?.();
+    } catch (err: any) {
+      toast({ title: "移动失败", description: err.message, variant: "destructive" });
+    } finally {
+      setMoving(false);
+    }
+  };
+
   const formatSize = (bytes: number) => {
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  // Build folder tree for move dialog
+  const buildFolderTree = (parentId: string | null): FolderItem[] => {
+    return folders
+      .filter((f) => f.parent_id === parentId)
+      .sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name));
+  };
+
+  const renderMoveFolderNode = (folder: FolderItem, depth: number): React.ReactNode => {
+    const children = buildFolderTree(folder.id);
+    const hasChildren = children.length > 0;
+    const isExpanded = moveExpanded.has(folder.id);
+    const isSelected = moveTargetId === folder.id;
+
+    return (
+      <div key={folder.id}>
+        <div
+          className={cn(
+            "flex items-center gap-1.5 py-1.5 px-2 rounded-md cursor-pointer text-sm transition-colors",
+            isSelected ? "bg-accent text-accent-foreground" : "hover:bg-muted"
+          )}
+          style={{ paddingLeft: `${depth * 20 + 8}px` }}
+          onClick={() => setMoveTargetId(folder.id)}
+        >
+          {hasChildren ? (
+            <button
+              className="shrink-0 p-0.5"
+              onClick={(e) => {
+                e.stopPropagation();
+                setMoveExpanded((prev) => {
+                  const next = new Set(prev);
+                  next.has(folder.id) ? next.delete(folder.id) : next.add(folder.id);
+                  return next;
+                });
+              }}
+            >
+              {isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+            </button>
+          ) : (
+            <span className="w-[18px] shrink-0" />
+          )}
+          <Folder className="w-4 h-4 shrink-0 text-amber-500" />
+          <span className="truncate">{folder.name}</span>
+        </div>
+        {isExpanded && children.map((child) => renderMoveFolderNode(child, depth + 1))}
+      </div>
+    );
   };
 
   return (
@@ -252,6 +355,17 @@ export default function MaterialList({ folderId, onMaterialChange }: MaterialLis
           {folderId === null ? "全部材料" : "当前目录"} · {materials.length} 个文件
         </div>
         <div className="flex gap-2">
+          {selectedIds.size > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={openMoveDialog}
+              className="gap-1"
+            >
+              <FolderInput className="w-3.5 h-3.5" />
+              移动到 ({selectedIds.size})
+            </Button>
+          )}
           {selectedIds.size > 0 && isAdmin && (
             <Button
               variant="destructive"
@@ -295,14 +409,12 @@ export default function MaterialList({ folderId, onMaterialChange }: MaterialLis
           <Table className="table-fixed">
             <TableHeader>
               <TableRow>
-                {isAdmin && (
-                  <TableHead className="w-10">
-                    <Checkbox
-                      checked={selectedIds.size === materials.length && materials.length > 0}
-                      onCheckedChange={toggleSelectAll}
-                    />
-                  </TableHead>
-                )}
+                <TableHead className="w-10">
+                  <Checkbox
+                    checked={selectedIds.size === materials.length && materials.length > 0}
+                    onCheckedChange={toggleSelectAll}
+                  />
+                </TableHead>
                 <TableHead className="w-[62%]">文件名</TableHead>
                 <TableHead className="hidden md:table-cell w-[88px] whitespace-nowrap">类型</TableHead>
                 <TableHead className="hidden md:table-cell w-[112px] whitespace-nowrap">有效期</TableHead>
@@ -320,14 +432,12 @@ export default function MaterialList({ folderId, onMaterialChange }: MaterialLis
 
                 return (
                   <TableRow key={mat.id} className={isSelected ? "bg-accent/30" : ""}>
-                    {isAdmin && (
-                      <TableCell>
-                        <Checkbox
-                          checked={isSelected}
-                          onCheckedChange={() => toggleSelect(mat.id)}
-                        />
-                      </TableCell>
-                    )}
+                    <TableCell>
+                      <Checkbox
+                        checked={isSelected}
+                        onCheckedChange={() => toggleSelect(mat.id)}
+                      />
+                    </TableCell>
                     <TableCell className="max-w-0">
                       <div className="flex items-center gap-2 min-w-0">
                         {isImageFile(mat) ? (
@@ -408,6 +518,37 @@ export default function MaterialList({ folderId, onMaterialChange }: MaterialLis
           {previewUrl && (
             <img src={previewUrl} alt={previewName} className="w-full h-auto max-h-[80vh] object-contain" />
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Move dialog */}
+      <Dialog open={moveDialogOpen} onOpenChange={setMoveDialogOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>移动到目录</DialogTitle>
+          </DialogHeader>
+          <div className="border rounded-md max-h-[300px] overflow-y-auto py-1">
+            {/* Root / uncategorized */}
+            <div
+              className={cn(
+                "flex items-center gap-1.5 py-1.5 px-2 rounded-md cursor-pointer text-sm transition-colors mx-1",
+                moveTargetId === null ? "bg-accent text-accent-foreground" : "hover:bg-muted"
+              )}
+              onClick={() => setMoveTargetId(null)}
+            >
+              <span className="w-[18px] shrink-0" />
+              <Building2 className="w-4 h-4 shrink-0 text-muted-foreground" />
+              <span className="truncate">未分类</span>
+            </div>
+            {buildFolderTree(null).map((f) => renderMoveFolderNode(f, 0))}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setMoveDialogOpen(false)}>取消</Button>
+            <Button size="sm" onClick={handleBatchMove} disabled={moving} className="gap-1">
+              {moving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+              确认移动
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
