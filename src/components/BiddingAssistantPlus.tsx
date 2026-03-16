@@ -428,6 +428,10 @@ export default function BiddingAssistantPlus() {
               onPromote={outline.promoteNode}
               onDemote={outline.demoteNode}
               onAutoNumber={outline.doAutoNumber}
+              onAutoParse={handleAutoParse}
+              onImportOutline={handleImportOutline}
+              autoParseLoading={autoParseLoading}
+              hasDocument={hasDocument}
             />
           </div>
         </Card>
