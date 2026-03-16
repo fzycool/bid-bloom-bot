@@ -460,6 +460,7 @@ export default function BiddingAssistantPlus() {
               <DocumentViewer
                 content={docContent}
                 onAddFromSelection={handleAddFromSelection}
+                highlightText={highlightText}
               />
             </div>
           </div>
