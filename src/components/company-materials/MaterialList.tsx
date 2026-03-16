@@ -303,11 +303,11 @@ export default function MaterialList({ folderId, onMaterialChange }: MaterialLis
                     />
                   </TableHead>
                 )}
-                <TableHead>文件名</TableHead>
-                <TableHead className="hidden md:table-cell">类型</TableHead>
-                <TableHead className="hidden md:table-cell w-28">有效期</TableHead>
-                <TableHead className="w-20">大小</TableHead>
-                <TableHead className="w-16">操作</TableHead>
+                <TableHead className="w-auto">文件名</TableHead>
+                <TableHead className="hidden md:table-cell w-20 whitespace-nowrap">类型</TableHead>
+                <TableHead className="hidden md:table-cell w-24 whitespace-nowrap">有效期</TableHead>
+                <TableHead className="w-16 whitespace-nowrap">大小</TableHead>
+                <TableHead className="w-14">操作</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -343,9 +343,9 @@ export default function MaterialList({ folderId, onMaterialChange }: MaterialLis
                           <FileText className="w-4 h-4 shrink-0 text-muted-foreground" />
                         )}
                         <div className="min-w-0">
-                          <p className="text-sm font-medium truncate max-w-[200px]">{mat.file_name}</p>
+                          <p className="text-sm font-medium truncate">{mat.file_name}</p>
                           {mat.content_description && (
-                            <p className="text-xs text-muted-foreground truncate max-w-[200px]">{mat.content_description}</p>
+                            <p className="text-xs text-muted-foreground truncate">{mat.content_description}</p>
                           )}
                         </div>
                       </div>
@@ -363,7 +363,7 @@ export default function MaterialList({ folderId, onMaterialChange }: MaterialLis
                         <span className="text-xs text-muted-foreground">-</span>
                       )}
                     </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">{formatSize(mat.file_size)}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{formatSize(mat.file_size)}</TableCell>
                     <TableCell>
                       <div className="flex items-center gap-0.5">
                         <Button
