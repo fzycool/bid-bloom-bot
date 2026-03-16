@@ -5,8 +5,8 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-const CHUNK_SIZE = 25000; // characters per chunk
-const MAX_TOTAL = 200000; // max total characters to process
+const CHUNK_SIZE = 30000;
+const MAX_TOTAL = 200000;
 
 interface OutlineNode {
   id: string;
@@ -25,11 +25,9 @@ async function extractChunk(
   customPrompt: string | undefined,
   chunkIndex: number,
   totalChunks: number,
-  existingSummary: string
 ): Promise<OutlineNode[]> {
   const chunkContext = totalChunks > 1
-    ? `\n\n注意：这是文档的第 ${chunkIndex + 1}/${totalChunks} 部分。${existingSummary ? `前面部分已提取的章节概要：${existingSummary}` : ""}
-请只提取本部分中出现的新章节，不要重复已提取的章节。如果某个章节在前面已出现，只提取其中新出现的子节点。`
+    ? `\n注意：这是文档的第 ${chunkIndex + 1}/${totalChunks} 部分。请只提取本部分中出现的章节。`
     : "";
 
   const systemPrompt = `你是投标文件大纲提取专家。用户会给你一份招标文件的内容和提取要求。
@@ -45,17 +43,7 @@ async function extractChunk(
       "sort_order": 0,
       "parent_id": null,
       "source_text": "从原文中摘录的该章节标题原始文字",
-      "children": [
-        {
-          "id": "new_${chunkIndex}_1_1",
-          "title": "1.1 ...",
-          "section_number": "1.1",
-          "sort_order": 0,
-          "parent_id": "new_${chunkIndex}_1",
-          "source_text": "从原文中摘录的该小节标题原始文字",
-          "children": []
-        }
-      ]
+      "children": [...]
     }
   ]
 }
@@ -66,7 +54,7 @@ async function extractChunk(
 3. 保留原始章节编号
 4. 按文档中出现的顺序排列
 5. 只返回JSON，不要其他内容
-6. 每个节点必须包含 source_text 字段，值为该章节标题在原文中的原始文字
+6. 每个节点必须包含 source_text 字段
 7. 提取所有层级的标题，包括表格名称（如"XXX一览表"、"XXX概况表"、"XXX简历表"）、承诺条款（如"（一）XXX承诺"、"（二）XXX措施"）等细节项
 8. 不要遗漏任何子章节、附表、承诺项等细节内容${chunkContext}`;
 
@@ -100,7 +88,7 @@ async function extractChunk(
   const content = data.choices?.[0]?.message?.content || "";
   const jsonMatch = content.match(/\{[\s\S]*\}/);
   if (!jsonMatch) {
-    console.error(`Chunk ${chunkIndex} no JSON found in:`, content.slice(0, 500));
+    console.error(`Chunk ${chunkIndex} no JSON found`);
     return [];
   }
 
@@ -113,35 +101,19 @@ async function extractChunk(
   }
 }
 
-/** Summarize existing tree for context in next chunk */
-function summarizeTree(nodes: OutlineNode[]): string {
-  const titles: string[] = [];
-  function walk(list: OutlineNode[], depth: number) {
-    for (const n of list) {
-      titles.push(`${"  ".repeat(depth)}${n.section_number || ""} ${n.title}`);
-      if (n.children?.length) walk(n.children, depth + 1);
-    }
-  }
-  walk(nodes, 0);
-  return titles.slice(0, 60).join("\n"); // limit summary size
-}
-
-/** Merge chunk results into main tree - append new chapters or merge children into existing ones */
+/** Merge chunk results - append new chapters or merge children into existing */
 function mergeChunkIntoTree(mainTree: OutlineNode[], chunkTree: OutlineNode[]): OutlineNode[] {
   for (const chunkNode of chunkTree) {
-    // Try to find matching chapter in main tree by section_number or similar title
     const existing = mainTree.find(m => {
       if (m.section_number && chunkNode.section_number) {
         return m.section_number === chunkNode.section_number;
       }
-      // Match by title prefix (e.g., "第六章" in both)
       const mTitle = m.title.replace(/\s+/g, "");
       const cTitle = chunkNode.title.replace(/\s+/g, "");
-      return mTitle === cTitle || mTitle.startsWith(cTitle.slice(0, 6)) || cTitle.startsWith(mTitle.slice(0, 6));
+      return mTitle === cTitle || (mTitle.length > 4 && cTitle.startsWith(mTitle.slice(0, 6))) || (cTitle.length > 4 && mTitle.startsWith(cTitle.slice(0, 6)));
     });
 
     if (existing && chunkNode.children?.length) {
-      // Merge children
       existing.children = mergeChunkIntoTree(existing.children || [], chunkNode.children);
     } else if (!existing) {
       mainTree.push(chunkNode);
@@ -158,21 +130,18 @@ function splitText(text: string, chunkSize: number): string[] {
   let pos = 0;
   while (pos < text.length) {
     let end = Math.min(pos + chunkSize, text.length);
-    // Try to break at a chapter/section boundary
     if (end < text.length) {
-      const searchBack = text.substring(end - 2000, end);
-      // Look for chapter headers to break at
-      const patterns = [/\n第[一二三四五六七八九十]+章/g, /\n\d+\.\s/g, /\n第[一二三四五六七八九十]+[节部分]/g];
+      const searchBack = text.substring(Math.max(pos, end - 3000), end);
+      const patterns = [/\n第[一二三四五六七八九十]+章/g, /\n第[一二三四五六七八九十]+[节部分]/g];
       let bestBreak = -1;
       for (const pattern of patterns) {
         let match;
         while ((match = pattern.exec(searchBack)) !== null) {
-          bestBreak = Math.max(bestBreak, end - 2000 + match.index);
+          const absPos = Math.max(pos, end - 3000) + match.index;
+          if (absPos > pos + chunkSize * 0.4) bestBreak = Math.max(bestBreak, absPos);
         }
       }
-      if (bestBreak > pos + chunkSize * 0.5) {
-        end = bestBreak;
-      }
+      if (bestBreak > pos) end = bestBreak;
     }
     chunks.push(text.substring(pos, end));
     pos = end;
@@ -196,21 +165,29 @@ serve(async (req) => {
     const chunks = splitText(text, CHUNK_SIZE);
     console.log(`Document length: ${text.length}, split into ${chunks.length} chunks`);
 
+    // Process all chunks in PARALLEL to avoid timeout
+    const chunkPromises = chunks.map((chunk, i) => {
+      console.log(`Starting chunk ${i + 1}/${chunks.length}, length: ${chunk.length}`);
+      return extractChunk(chunk, LOVABLE_API_KEY, customPrompt, i, chunks.length)
+        .catch(err => {
+          console.error(`Chunk ${i} failed:`, err.message);
+          return [] as OutlineNode[];
+        });
+    });
+
+    const results = await Promise.all(chunkPromises);
+
+    // Merge results in order
     let mergedTree: OutlineNode[] = [];
-
-    for (let i = 0; i < chunks.length; i++) {
-      console.log(`Processing chunk ${i + 1}/${chunks.length}, length: ${chunks[i].length}`);
-      const summary = i > 0 ? summarizeTree(mergedTree) : "";
-      const chunkResult = await extractChunk(chunks[i], LOVABLE_API_KEY, customPrompt, i, chunks.length, summary);
-
-      if (i === 0) {
+    for (const chunkResult of results) {
+      if (mergedTree.length === 0) {
         mergedTree = chunkResult;
       } else {
         mergedTree = mergeChunkIntoTree(mergedTree, chunkResult);
       }
     }
 
-    // Re-assign sort_order
+    // Fix sort_order
     function fixSortOrder(nodes: OutlineNode[], parentId: string | null = null) {
       nodes.forEach((n, idx) => {
         n.sort_order = idx;
