@@ -78,6 +78,13 @@ const aiStatusConfig: Record<string, { icon: typeof CheckCircle; label: string; 
   failed: { icon: AlertCircle, label: "识别失败", color: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400" },
 };
 
+interface FolderItem {
+  id: string;
+  name: string;
+  parent_id: string | null;
+  sort_order: number;
+}
+
 interface MaterialListProps {
   folderId: string | null; // null = show all
   onMaterialChange?: () => void;
@@ -93,6 +100,11 @@ export default function MaterialList({ folderId, onMaterialChange }: MaterialLis
   const [previewName, setPreviewName] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [deleting, setDeleting] = useState(false);
+  const [moveDialogOpen, setMoveDialogOpen] = useState(false);
+  const [folders, setFolders] = useState<FolderItem[]>([]);
+  const [moveTargetId, setMoveTargetId] = useState<string | null>(null);
+  const [moving, setMoving] = useState(false);
+  const [moveExpanded, setMoveExpanded] = useState<Set<string>>(new Set());
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const fetchMaterials = useCallback(async () => {
