@@ -125,6 +125,7 @@ interface BidAnalysisItem {
   file_path: string | null;
   created_at: string;
   ai_status: string;
+  document_structure?: any;
 }
 
 function countNodes(tree: any[]): number {
