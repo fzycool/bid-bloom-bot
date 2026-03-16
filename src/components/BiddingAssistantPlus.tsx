@@ -225,70 +225,59 @@ export default function BiddingAssistantPlus() {
     }
   }, [toast, loadBlob]);
 
-  // Load document structure as outline framework
-  const handleLoadFramework = useCallback((item: BidAnalysisItem) => {
-    if (!item.document_structure) {
-      toast({ title: "该项目尚无文档结构", variant: "destructive" });
-      return;
-    }
-
-    try {
-      const structure = typeof item.document_structure === "string"
-        ? JSON.parse(item.document_structure)
-        : item.document_structure;
-
-      // Convert document_structure chapters to OutlineNode[]
-      const convertToNodes = (chapters: any[], parentId: string | null = null): any[] => {
-        if (!Array.isArray(chapters)) return [];
-        return chapters.map((ch: any, i: number) => {
-          const id = genId();
-          const title = ch.title || ch.name || ch.chapter_title || `章节 ${i + 1}`;
-          const sectionNumber = ch.section_number || ch.number || null;
-          const children = ch.children || ch.sub_chapters || ch.sections || [];
-          return {
-            id,
-            title: sectionNumber ? `${sectionNumber} ${title}` : title,
-            section_number: sectionNumber,
-            sort_order: i,
-            parent_id: parentId,
-            children: convertToNodes(children, id),
-            source_text: ch.source_text || title,
-          };
-        });
-      };
-
-      // Handle different possible structure formats
-      const chapters = Array.isArray(structure)
-        ? structure
-        : structure.chapters || structure.sections || structure.toc || [];
-
-      const tree = convertToNodes(chapters);
-      if (tree.length === 0) {
-        toast({ title: "文档结构为空", variant: "destructive" });
-        return;
-      }
-
-      outline.replaceTree(tree);
-      setFrameworkDialogOpen(false);
-      toast({ title: "文件框架已载入", description: `共 ${countNodes(tree)} 个节点` });
-    } catch (err: any) {
-      toast({ title: "载入框架失败", description: err.message, variant: "destructive" });
-    }
-  }, [outline, toast]);
-
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Upload local file → parse document → AI extract outline as framework
+  const handleFrameworkUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    setLoading(true);
+    setFrameworkLoading(true);
     try {
-      await loadBlob(file, file.name, file.name);
-      toast({ title: "文件已加载", description: file.name });
+      // Step 1: Parse the file to get plain text
+      const blob = file as Blob;
+      const result = await parseDocumentBlob(blob, file.name);
+      const text = result.plainText;
+      if (!text || text.trim().length < 10) {
+        toast({ title: "文件内容过少，无法提取框架", variant: "destructive" });
+        return;
+      }
+
+      // Also load the document for viewing on the right
+      setDocContent(result.content);
+      setPlainText(text);
+      setFileName(file.name);
+
+      // Step 2: Call AI to extract outline
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const anonKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+
+      const response = await fetch(`${supabaseUrl}/functions/v1/parse-outline`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${anonKey}`,
+        },
+        body: JSON.stringify({
+          documentText: text.slice(0, 30000),
+        }),
+      });
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || "解析失败");
+      }
+
+      const data = await response.json();
+      if (data.tree && Array.isArray(data.tree)) {
+        outline.replaceTree(data.tree);
+        toast({ title: "文件框架已载入", description: `${file.name} · 共 ${countNodes(data.tree)} 个节点` });
+      } else {
+        throw new Error("返回格式异常");
+      }
     } catch (err: any) {
-      toast({ title: "文件解析失败", description: err.message, variant: "destructive" });
+      toast({ title: "载入框架失败", description: err.message, variant: "destructive" });
     } finally {
-      setLoading(false);
-      if (fileInputRef.current) fileInputRef.current.value = "";
+      setFrameworkLoading(false);
+      if (frameworkInputRef.current) frameworkInputRef.current.value = "";
     }
   };
 
