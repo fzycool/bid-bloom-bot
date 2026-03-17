@@ -120,6 +120,7 @@ const TechCheckProjects = () => {
   // Quality check state
   const [showChecklistPicker, setShowChecklistPicker] = useState(false);
   const [pickerProjectId, setPickerProjectId] = useState<string | null>(null);
+  const [selectedChecklistId, setSelectedChecklistId] = useState<string | null>(null);
   const [qcRunning, setQcRunning] = useState<string | null>(null); // projectId currently running
   const [qcProgress, setQcProgress] = useState(0);
   const [qcReport, setQcReport] = useState<QCReport | null>(null);
