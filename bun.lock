@@ -104,6 +104,10 @@
       },
     },
   },
+  "overrides": {
+    "@tiptap/extension-horizontal-rule": "2.11.9",
+    "@tiptap/extension-text-style": "2.11.9",
+  },
   "packages": {
     "@adobe/css-tools": ["@adobe/css-tools@4.4.4", "", {}, "sha512-Elp+iwUx5rN5+Y8xLt5/GRoG20WGoDCQ/1Fb+1LiGtvwbDavuSk0jhD/eZdckHAuzcDzccnkv+rEjyWfRx18gg=="],
 
@@ -475,7 +479,7 @@
 
     "@tiptap/extension-text-align": ["@tiptap/extension-text-align@2.11.9", "", { "peerDependencies": { "@tiptap/core": "^2.7.0" } }, "sha512-MaCL83TPiDX20vdKSe+QwghBcJ5HDtrK6btGqgW4pugae0Pi71oe2lqkeM+eJBsiXN4WG+x9XMwBRd9vUnLF0g=="],
 
-    "@tiptap/extension-text-style": ["@tiptap/extension-text-style@3.20.3", "", { "peerDependencies": { "@tiptap/core": "^3.20.3" } }, "sha512-SYjIfffOw12GICqs/eCcvRDxmFba/jNNeqhmmZvl17dfs0tj9PeawVUjdfZJ/JnTy87wvLtypiGDJJoN2HEmJA=="],
+    "@tiptap/extension-text-style": ["@tiptap/extension-text-style@2.11.9", "", { "peerDependencies": { "@tiptap/core": "^2.7.0" } }, "sha512-lB3uJBRiRYTCxtNeEF70IiwzGFfAU69xvsHpQowJU357lZsTj/QPRQt8Blu48qIoUAJGU00vGRTLae6X9myMMw=="],
 
     "@tiptap/extension-underline": ["@tiptap/extension-underline@2.11.9", "", { "peerDependencies": { "@tiptap/core": "^2.7.0" } }, "sha512-b8MwovgUqaDZSwCJ48ug9cKBBD3prwPTUH0IZ8HofodHc8VF8xbPmUEpePRnCYaV0ONGKPHkiz1crIwj1FBK+A=="],
 
@@ -1450,10 +1454,6 @@
     "@eslint/eslintrc/globals": ["globals@14.0.0", "", {}, "sha512-oahGvuMGQlPw/ivIYBjVSrWAfWLBeku5tpPE2fOPLi+WHffIWbuh2tCjhyQhTBPMf5E9jDEH4FOmTYgYwbKwtQ=="],
 
     "@humanfs/node/@humanwhocodes/retry": ["@humanwhocodes/retry@0.3.1", "", {}, "sha512-JBxkERygn7Bv/GbN5Rv8Ul6LVknS+5Bp6RgDC/O8gEBU/yeH5Ui5C/OlWrTb6qct7LjjfT6Re2NxB0ln0yYybA=="],
-
-    "@tiptap/starter-kit/@tiptap/extension-horizontal-rule": ["@tiptap/extension-horizontal-rule@2.27.2", "", { "peerDependencies": { "@tiptap/core": "^2.7.0", "@tiptap/pm": "^2.7.0" } }, "sha512-WGWUSgX+jCsbtf9Y9OCUUgRZYuwjVoieW5n6mAUohJ9/6gc6sGIOrUpBShf+HHo6WD+gtQjRd+PssmX3NPWMpg=="],
-
-    "@tiptap/starter-kit/@tiptap/extension-text-style": ["@tiptap/extension-text-style@2.27.2", "", { "peerDependencies": { "@tiptap/core": "^2.7.0" } }, "sha512-Omk+uxjJLyEY69KStpCw5fA9asvV+MGcAX2HOxyISDFoLaL49TMrNjhGAuz09P1L1b0KGXo4ml7Q3v/Lfy4WPA=="],
 
     "@typescript-eslint/eslint-plugin/ignore": ["ignore@7.0.5", "", {}, "sha512-Hs59xBNfUIunMFgWAbGX5cq6893IbWg4KnrjbYwX3tx0ztorVgTDA6B2sxf8ejHJ4wz8BqGUMYlnzNBer5NvGg=="],
 
