@@ -348,7 +348,16 @@ const TechCheckProjects = () => {
     const checklists = getChecklists();
     if (checklists.length === 0) return toast.error("请先创建检查清单（在下方检查清单区域）");
     setPickerProjectId(projectId);
+    setSelectedChecklistId(checklists[0]?.id || null);
     setShowChecklistPicker(true);
+  };
+
+  const handleConfirmQC = () => {
+    if (!pickerProjectId || !selectedChecklistId) return;
+    const checklists = getChecklists();
+    const selected = checklists.find(cl => cl.id === selectedChecklistId);
+    if (!selected) return toast.error("未找到选中的检查清单");
+    runQualityCheck(pickerProjectId, selected);
   };
 
   // Extract text from a file stored in Supabase
