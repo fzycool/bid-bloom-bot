@@ -91,7 +91,7 @@ serve(async (req) => {
                 {
                   role: "user",
                   content: [
-                    { type: "file", file: { filename: "resume.pdf", file_data: `data:application/pdf;base64,${b64}` } },
+                    { type: "text", text: `以下是PDF简历的Base64编码内容（请解析并提取文本）：\n\ndata:application/pdf;base64,${b64}` },
                     { type: "text", text: "请提取这份PDF简历的全部文本内容。" },
                   ],
                 },
