@@ -91,7 +91,7 @@ serve(async (req) => {
                 {
                   role: "user",
                   content: [
-                    { type: "file", file: { filename: "resume.pdf", file_data: `data:application/pdf;base64,${b64}` } },
+                    { type: "text", text: `以下是PDF简历的Base64编码内容（请解析并提取文本）：\n\ndata:application/pdf;base64,${b64}` },
                     { type: "text", text: "请提取这份PDF简历的全部文本内容。" },
                   ],
                 },
@@ -657,13 +657,10 @@ Excel的格式可能包括但不限于：
             },
             {
               role: "user",
-              content: [
+               content: [
                 {
-                  type: "file",
-                  file: {
-                    filename: "template.docx",
-                    file_data: `data:application/vnd.openxmlformats-officedocument.wordprocessingml.document;base64,${templateB64}`,
-                  },
+                  type: "text",
+                  text: `以下是Word模板的Base64编码内容（请分析其格式结构）：\n\ndata:application/vnd.openxmlformats-officedocument.wordprocessingml.document;base64,${templateB64}`,
                 },
                 {
                   type: "text",
@@ -734,11 +731,8 @@ ${JSON.stringify(resume.education_history || [], null, 2)}`,
               role: "user",
               content: [
                 {
-                  type: "file",
-                  file: {
-                    filename: "template.docx",
-                    file_data: `data:application/vnd.openxmlformats-officedocument.wordprocessingml.document;base64,${templateB64}`,
-                  },
+                  type: "text",
+                  text: `以下是Word模板的Base64编码内容（请分析其格式结构）：\n\ndata:application/vnd.openxmlformats-officedocument.wordprocessingml.document;base64,${templateB64}`,
                 },
                 {
                   type: "text",
